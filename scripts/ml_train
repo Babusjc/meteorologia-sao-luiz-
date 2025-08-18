@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 import joblib
 import logging
+import os
 from dotenv import load_dotenv
 
 # Adiciona o diretório pai ao path para resolver imports
@@ -42,10 +43,17 @@ def train_precipitation_model():
         
         # Engenharia de features
         try:
-            df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+            # Combina data e hora
+            df['datetime'] = pd.to_datetime(
+                df['data'].astype(str) + ' ' + df['hora'].astype(str),
+                errors='coerce'
+            )
+            
+            # Extrai características temporais
             df['hour'] = df['datetime'].dt.hour
             df['day_of_week'] = df['datetime'].dt.dayofweek
             df['month'] = df['datetime'].dt.month
+            df['year'] = df['datetime'].dt.year
         except Exception as e:
             logging.error(f"Erro ao criar features: {str(e)}")
             return
@@ -55,7 +63,7 @@ def train_precipitation_model():
             'temperatura_ar', 'umidade_relativa', 
             'pressao_atm_estacao', 'radiacao_global',
             'temperatura_max', 'temperatura_min',
-            'hour', 'day_of_week', 'month'
+            'hour', 'day_of_week', 'month', 'year'
         ]
         target = 'precipitacao_total'
         
@@ -86,7 +94,13 @@ def train_precipitation_model():
         )
         
         # Treinar modelo
-        model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+        model = RandomForestRegressor(
+            n_estimators=150,
+            max_depth=10,
+            min_samples_split=5,
+            random_state=42,
+            n_jobs=-1
+        )
         model.fit(X_train, y_train)
         
         # Avaliar
@@ -98,8 +112,9 @@ def train_precipitation_model():
         
         # Salvar modelo
         os.makedirs('models', exist_ok=True)
-        joblib.dump(model, 'models/precipitation_model.pkl')
-        logging.info("Modelo salvo em models/precipitation_model.pkl")
+        model_path = 'models/precipitation_model.pkl'
+        joblib.dump(model, model_path)
+        logging.info(f"Modelo salvo em {model_path}")
         
     except Exception as e:
         logging.error(f"Erro no treinamento do modelo: {str(e)}")
