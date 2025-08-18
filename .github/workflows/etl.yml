@@ -32,11 +32,11 @@ jobs:
         mkdir -p data/processed
         mkdir -p models
         
-        # Executar ETL (usando caminho absoluto)
-        python $GITHUB_WORKSPACE/scripts/etl_local.py
+        # Executar ETL
+        python scripts/etl_local.py
         
         # Treinar modelo
-        python $GITHUB_WORKSPACE/scripts/ml_train.py
+        python scripts/ml_train.py
         
     - name: Commit processed data and models
       run: |
