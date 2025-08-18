@@ -7,6 +7,9 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+import sys
+from pathlib import Path
+
 
 # Adiciona o diretório raiz ao path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
