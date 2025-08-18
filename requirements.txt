@@ -8,3 +8,4 @@ scikit-learn==1.3.0
 joblib==1.3.2
 sqlalchemy==2.0.20
 openpyxl==3.1.2
+gdown==4.7.1  # Adicionado para download do Google Drive
