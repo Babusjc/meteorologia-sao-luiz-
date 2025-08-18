@@ -46,7 +46,15 @@ def process_file(file_path: Path) -> pd.DataFrame:
             "umidade_rel_max", "umidade_rel_min", "umidade_relativa",
             "vento_direcao", "vento_rajada_max", "vento_velocidade"
         ]
-        df.columns = columns
+        
+        # Verifica se o número de colunas corresponde
+        if len(df.columns) != len(columns):
+            logging.warning(f"O arquivo {file_path.name} tem {len(df.columns)} colunas, mas esperávamos {len(columns)}. Verificando correspondência...")
+            
+            # Tenta usar as colunas existentes se o número for diferente
+            df.columns = df.columns[:len(columns)]
+        else:
+            df.columns = columns
         
         # Aplica a limpeza em todas as células
         for col in df.columns:
@@ -55,13 +63,26 @@ def process_file(file_path: Path) -> pd.DataFrame:
         # Converte colunas numéricas para float
         numeric_cols = columns[2:]  # Todas exceto data e horas
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Converte a coluna de data
-        df['data'] = pd.to_datetime(df['data'], format='%d/%m/%Y', errors='coerce')
+        if 'data' in df.columns:
+            df['data'] = pd.to_datetime(df['data'], format='%d/%m/%Y', errors='coerce')
+        else:
+            logging.error("Coluna 'data' não encontrada no arquivo")
         
         # Converte a coluna de horas para tempo
-        df['horas'] = pd.to_datetime(df['horas'], format='%H:%M', errors='coerce').dt.time
+        if 'horas' in df.columns:
+            try:
+                # Tenta converter para datetime e extrair o tempo
+                df['horas'] = pd.to_datetime(df['horas'], format='%H:%M', errors='coerce').dt.time
+            except Exception as e:
+                logging.error(f"Erro ao converter horas: {str(e)}")
+                # Tenta uma conversão alternativa
+                df['horas'] = pd.to_datetime(df['horas'], errors='coerce').dt.time
+        else:
+            logging.error("Coluna 'horas' não encontrada no arquivo")
         
         return df
     
@@ -70,23 +91,30 @@ def process_file(file_path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 def main():
-    db = NeonDB()
-    db.create_table()
+    try:
+        db = NeonDB()
+        db.create_table()
+    except Exception as e:
+        logging.error(f"Falha ao conectar ao banco de dados: {str(e)}")
+        return
     
     processed_files = []
     for file in RAW_DATA_DIR.iterdir():
-        if file.is_file() and file.suffix == '.csv':
+        if file.is_file() and file.suffix.lower() == '.csv':
             logging.info(f"Processando: {file.name}")
-            df = process_file(file)
-            
-            if not df.empty:
-                # Salvar versão processada
-                processed_path = PROCESSED_DIR / f"processed_{file.stem}.csv"
-                df.to_csv(processed_path, index=False)
+            try:
+                df = process_file(file)
                 
-                # Enviar para o Neon
-                db.upload_data(df)
-                processed_files.append(file.name)
+                if not df.empty:
+                    # Salvar versão processada
+                    processed_path = PROCESSED_DIR / f"processed_{file.stem}.csv"
+                    df.to_csv(processed_path, index=False)
+                    
+                    # Enviar para o Neon
+                    db.upload_data(df)
+                    processed_files.append(file.name)
+            except Exception as e:
+                logging.error(f"Erro ao processar {file.name}: {str(e)}")
     
     logging.info(f"Processamento completo! {len(processed_files)} arquivos enviados")
 
