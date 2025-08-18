@@ -25,10 +25,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
+    - name: Download data from Google Drive
+      run: |
+        mkdir -p data/raw
+        python scripts/download_data.py
+        
     - name: Run ETL and ML training
       run: |
-        # Criar estrutura de diretórios
-        mkdir -p data/raw
         mkdir -p data/processed
         mkdir -p models
         
