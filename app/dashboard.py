@@ -7,13 +7,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
-import sys
-from pathlib import Path
-
-
-# Adiciona o diretório raiz ao path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
+import calendar
 from scripts.database import NeonDB
 from dotenv import load_dotenv
 
@@ -61,7 +55,10 @@ if len(date_range) == 2:
 
 # Criar coluna datetime combinada
 if 'data' in df.columns and 'hora' in df.columns:
-    df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+    df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str)
+    df['hour'] = df['datetime'].dt.hour
+    df['weekday'] = df['datetime'].dt.dayofweek
+    df['month'] = df['datetime'].dt.month
 
 # KPIs
 if not df.empty:
@@ -88,34 +85,68 @@ if not df.empty:
         col4.metric("Vento", "Dados indisponíveis")
 
 # Previsões
-if show_predictions:
+if show_predictions and not df.empty:
     st.subheader("Previsão de Precipitação")
     try:
         model = joblib.load('models/precipitation_model.pkl')
         
-        # Criar dados de exemplo para previsão
-        sample_data = {
-            'temperatura_ar': [25.0],
-            'umidade_relativa': [70.0],
-            'pressao_atm_estacao': [1013.0],
-            'radiacao_global': [500.0],
-            'temperatura_max': [28.0],
-            'temperatura_min': [22.0],
-            'hour': [12],
-            'day_of_week': [3],
-            'month': [7]
-        }
-        sample_df = pd.DataFrame(sample_data)
+        # Usar os últimos dados disponíveis para previsão
+        last_entry = df.iloc[0]
         
-        prediction = model.predict(sample_df)
-        st.metric("Previsão de Precipitação", f"{prediction[0]:.1f} mm")
-        st.info("Esta é uma previsão de exemplo com dados simulados")
+        # Preparar dados para previsão
+        prediction_data = {
+            'temperatura_ar': [last_entry['temperatura_ar']],
+            'umidade_relativa': [last_entry['umidade_relativa']],
+            'pressao_atm_estacao': [last_entry['pressao_atm_estacao']],
+            'radiacao_global': [last_entry['radiacao_global']],
+            'temperatura_max': [last_entry['temperatura_max']],
+            'temperatura_min': [last_entry['temperatura_min']],
+            'hour': [last_entry['hour']],
+            'day_of_week': [last_entry['weekday']],
+            'month': [last_entry['month']]
+        }
+        prediction_df = pd.DataFrame(prediction_data)
+        
+        prediction = model.predict(prediction_df)
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Previsão de Precipitação (próxima hora)", f"{prediction[0]:.1f} mm")
+        
+        # Adicionar informações contextuais
+        col2.markdown(f"**Dados usados para previsão:**")
+        col2.markdown(f"- Temperatura: {last_entry['temperatura_ar']}°C")
+        col2.markdown(f"- Umidade: {last_entry['umidade_relativa']}%")
+        col2.markdown(f"- Hora: {last_entry['hour']}h")
+        
+        # Mapa de probabilidade
+        proba = model.predict_proba(prediction_df)[0]
+        proba_df = pd.DataFrame({
+            'Probabilidade': proba,
+            'Classe': ['Sem Chuva', 'Chuva Leve', 'Chuva Forte']
+        })
+        
+        fig_proba = px.bar(
+            proba_df, 
+            x='Classe', 
+            y='Probabilidade',
+            title='Probabilidade de Precipitação',
+            text='Probabilidade',
+            color='Classe',
+            color_discrete_sequence=['green', 'orange', 'red']
+        )
+        fig_proba.update_traces(texttemplate='%{text:.0%}', textposition='outside')
+        fig_proba.update_layout(yaxis_tickformat='.0%')
+        st.plotly_chart(fig_proba, use_container_width=True)
         
     except Exception as e:
         st.error(f"Erro ao carregar modelo: {str(e)}")
+        st.info("Certifique-se que o arquivo do modelo está em 'models/precipitation_model.pkl'")
 
 # Tabs para diferentes visualizações
-tab1, tab2, tab3, tab4 = st.tabs(["Temperatura", "Umidade", "Precipitação", "Pressão"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Temperatura", "Umidade", "Precipitação", "Pressão", 
+    "Vento", "Radiação Solar", "Mapa de Calor"
+])
 
 with tab1:
     if not df.empty and 'temperatura_ar' in df.columns and 'datetime' in df.columns:
@@ -146,7 +177,8 @@ with tab1:
         fig_temp.update_layout(
             title="Variação de Temperatura",
             yaxis_title="Temperatura (°C)",
-            hovermode="x unified"
+            hovermode="x unified",
+            xaxis_title="Data e Hora"
         )
         st.plotly_chart(fig_temp, use_container_width=True)
     else:
@@ -159,8 +191,10 @@ with tab2:
             x='datetime', 
             y='umidade_relativa', 
             title="Umidade Relativa",
-            labels={'umidade_relativa': 'Umidade (%)'}
+            labels={'umidade_relativa': 'Umidade (%)'},
+            color_discrete_sequence=['blue']
         )
+        fig_umidade.update_layout(xaxis_title="Data e Hora")
         st.plotly_chart(fig_umidade, use_container_width=True)
     else:
         st.warning("Dados de umidade indisponíveis")
@@ -172,8 +206,10 @@ with tab3:
             x='datetime', 
             y='precipitacao_total', 
             title="Precipitação",
-            labels={'precipitacao_total': 'Precipitação (mm)'}
+            labels={'precipitacao_total': 'Precipitação (mm)'},
+            color_discrete_sequence=['#1f77b4']
         )
+        fig_precip.update_layout(xaxis_title="Data e Hora")
         st.plotly_chart(fig_precip, use_container_width=True)
     else:
         st.warning("Dados de precipitação indisponíveis")
@@ -185,14 +221,125 @@ with tab4:
             x='datetime', 
             y='pressao_atm_estacao', 
             title="Pressão Atmosférica",
-            labels={'pressao_atm_estacao': 'Pressão (mB)'}
+            labels={'pressao_atm_estacao': 'Pressão (mB)'},
+            color_discrete_sequence=['green']
         )
+        fig_pressao.update_layout(xaxis_title="Data e Hora")
         st.plotly_chart(fig_pressao, use_container_width=True)
     else:
         st.warning("Dados de pressão indisponíveis")
 
+with tab5:
+    if not df.empty and 'vento_velocidade' in df.columns and 'vento_direcao' in df.columns:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_vento = px.line(
+                df, 
+                x='datetime', 
+                y='vento_velocidade', 
+                title="Velocidade do Vento",
+                labels={'vento_velocidade': 'Velocidade (m/s)'},
+                color_discrete_sequence=['purple']
+            )
+            fig_vento.update_layout(xaxis_title="Data e Hora")
+            st.plotly_chart(fig_vento, use_container_width=True)
+        
+        with col2:
+            # Rosa dos Ventos
+            wind_df = df.dropna(subset=['vento_direcao', 'vento_velocidade'])
+            if not wind_df.empty:
+                fig_rosa = px.bar_polar(
+                    wind_df,
+                    r="vento_velocidade",
+                    theta="vento_direcao",
+                    color="vento_velocidade",
+                    template="plotly_dark",
+                    color_continuous_scale=px.colors.sequential.Plasma_r,
+                    title="Rosa dos Ventos"
+                )
+                st.plotly_chart(fig_rosa, use_container_width=True)
+            else:
+                st.warning("Dados insuficientes para gerar rosa dos ventos")
+    else:
+        st.warning("Dados de vento indisponíveis")
+
+with tab6:
+    if not df.empty and 'radiacao_global' in df.columns and 'datetime' in df.columns:
+        fig_rad = px.line(
+            df, 
+            x='datetime', 
+            y='radiacao_global', 
+            title="Radiação Solar",
+            labels={'radiacao_global': 'Radiação (W/m²)'},
+            color_discrete_sequence=['orange']
+        )
+        fig_rad.update_layout(xaxis_title="Data e Hora")
+        st.plotly_chart(fig_rad, use_container_width=True)
+    else:
+        st.warning("Dados de radiação solar indisponíveis")
+
+with tab7:
+    if not df.empty and 'temperatura_ar' in df.columns and 'datetime' in df.columns:
+        # Preparar dados para heatmap
+        df_heatmap = df.copy()
+        df_heatmap['hour'] = df_heatmap['datetime'].dt.hour
+        df_heatmap['date'] = df_heatmap['datetime'].dt.date
+        
+        pivot_table = df_heatmap.pivot_table(
+            index='hour', 
+            columns='date', 
+            values='temperatura_ar', 
+            aggfunc='mean'
+        )
+        
+        fig_heatmap = go.Figure(data=go.Heatmap(
+            z=pivot_table.values,
+            x=pivot_table.columns.astype(str),
+            y=pivot_table.index,
+            colorscale='Viridis',
+            hoverongaps=False
+        ))
+        
+        fig_heatmap.update_layout(
+            title="Variação Diária de Temperatura",
+            xaxis_title="Data",
+            yaxis_title="Hora do Dia",
+            height=500
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+    else:
+        st.warning("Dados de temperatura indisponíveis para mapa de calor")
+
 # Dados brutos
 if show_raw and not df.empty:
     st.subheader("Dados Brutos")
-    st.dataframe(df.sort_values('datetime' if 'datetime' in df.columns else 'data', ascending=False).head(100))
-  
+    
+    # Adicionar filtros de coluna
+    columns = st.multiselect(
+        "Selecione as colunas para mostrar",
+        options=df.columns,
+        default=['datetime', 'temperatura_ar', 'umidade_relativa', 'precipitacao_total']
+    )
+    
+    # Ordenação
+    sort_col = st.selectbox("Ordenar por", options=df.columns, index=0)
+    sort_order = st.radio("Ordem", ['Ascendente', 'Descendente'], index=1)
+    
+    # Aplicar filtros
+    filtered_df = df[columns]
+    filtered_df = filtered_df.sort_values(
+        sort_col, 
+        ascending=(sort_order == 'Ascendente')
+    )
+    
+    st.dataframe(filtered_df.head(100))
+    
+    # Botão de download
+    csv = filtered_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Baixar dados como CSV",
+        data=csv,
+        file_name='dados_meteorologicos.csv',
+        mime='text/csv'
+    )
