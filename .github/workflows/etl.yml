@@ -1,0 +1,46 @@
+name: ETL Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'  # Executa diariamente às 3AM UTC
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run ETL
+      run: |
+        # Cria diretório para dados brutos
+        mkdir -p data/raw
+        # Simula a cópia dos dados (em produção, adicionar lógica real)
+        echo "Simulando cópia de dados brutos..."
+        
+        # Executa o ETL
+        python scripts/etl_local.py
+        
+    - name: Commit processed data
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/processed/*
+        git commit -m "Update processed data" || echo "No changes to commit"
+        git push
+
+        
