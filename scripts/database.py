@@ -4,13 +4,27 @@ from sqlalchemy import create_engine, text
 import pandas as pd
 from dotenv import load_dotenv
 from psycopg2.extras import execute_values
+import logging
 
-load_dotenv()
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
 
 class NeonDB:
     def __init__(self):
+        # Tentar carregar do .env primeiro, depois do ambiente
+        load_dotenv()
         self.conn_str = os.getenv("NEON_DATABASE_URL")
-        self.engine = create_engine(self.conn_str)
+        
+        if not self.conn_str:
+            logging.error("NEON_DATABASE_URL não encontrada nas variáveis de ambiente")
+            raise ValueError("String de conexão do Neon não configurada")
+        
+        try:
+            self.engine = create_engine(self.conn_str)
+            logging.info("Engine do SQLAlchemy criado com sucesso")
+        except Exception as e:
+            logging.error(f"Erro ao criar engine: {str(e)}")
+            raise
     
     def create_table(self):
         """Cria a tabela se não existir com a estrutura definida"""
@@ -40,31 +54,39 @@ class NeonDB:
             CONSTRAINT unique_data_hora UNIQUE (data, hora)
         );
         """
-        with self.engine.connect() as conn:
-            conn.execute(text(create_table_sql))
-            conn.commit()
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text(create_table_sql))
+                conn.commit()
+            logging.info("Tabela meteo_data criada/verificada")
+        except Exception as e:
+            logging.error(f"Erro ao criar tabela: {str(e)}")
+            raise
     
     def upload_data(self, df: pd.DataFrame):
         """Envia dados para o Neon"""
-        # Verifica se o DataFrame tem dados
         if df.empty:
+            logging.warning("DataFrame vazio, nada para enviar")
             return
         
-        # Prepara os dados para inserção
+        # Preparar os dados para inserção
         records = []
         for _, row in df.iterrows():
-            record = (
-                row['data'], row['horas'], row['precipitacao_total'], 
-                row['pressao_atm_estacao'], row['pressao_atm_max'], 
-                row['pressao_atm_min'], row['radiacao_global'], 
-                row['temperatura_ar'], row['temperatura_orvalho'], 
-                row['temperatura_max'], row['temperatura_min'], 
-                row['temperatura_orvalho_max'], row['temperatura_orvalho_min'], 
-                row['umidade_rel_max'], row['umidade_rel_min'], 
-                row['umidade_relativa'], row['vento_direcao'], 
-                row['vento_rajada_max'], row['vento_velocidade']
-            )
-            records.append(record)
+            try:
+                record = (
+                    row['data'], row['horas'], 
+                    float(row['precipitacao_total']) if not pd.isna(row['precipitacao_total']) else None,
+                    float(row['pressao_atm_estacao']) if not pd.isna(row['pressao_atm_estacao']) else None,
+                    # ... repetir para todas as colunas numéricas ...
+                    float(row['vento_velocidade']) if not pd.isna(row['vento_velocidade']) else None
+                )
+                records.append(record)
+            except Exception as e:
+                logging.error(f"Erro ao preparar linha: {str(e)}")
+        
+        if not records:
+            logging.warning("Nenhum registro válido para enviar")
+            return
         
         # Query de inserção
         insert_sql = """
@@ -96,10 +118,10 @@ class NeonDB:
             vento_velocidade = EXCLUDED.vento_velocidade
         """
         
-        # Executa a inserção usando psycopg2 diretamente
-        conn = psycopg2.connect(self.conn_str)
-        cur = conn.cursor()
         try:
+            # Usar conexão direta do psycopg2 para execute_values
+            conn = psycopg2.connect(self.conn_str)
+            cur = conn.cursor()
             execute_values(
                 cur,
                 insert_sql,
@@ -110,12 +132,19 @@ class NeonDB:
             logging.info(f"✅ {len(records)} registros inseridos/atualizados")
         except Exception as e:
             logging.error(f"❌ Erro ao inserir dados: {str(e)}")
-            conn.rollback()
+            if conn:
+                conn.rollback()
         finally:
-            cur.close()
-            conn.close()
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
     
     def get_data(self, query: str = "SELECT * FROM meteo_data"):
         """Recupera dados do banco"""
-        return pd.read_sql(query, self.engine)
+        try:
+            return pd.read_sql(query, self.engine)
+        except Exception as e:
+            logging.error(f"Erro ao recuperar dados: {str(e)}")
+            return pd.DataFrame()
         
