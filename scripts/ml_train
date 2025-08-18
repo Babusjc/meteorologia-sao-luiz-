@@ -1,19 +1,17 @@
+import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 import joblib
-from scripts.database import NeonDB
-from dotenv import load_dotenv
 import logging
-import sys
-from pathlib import Path
+from dotenv import load_dotenv
 
 # Adiciona o diretório pai ao path para resolver imports
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-# Agora importe o módulo database
 from scripts.database import NeonDB
 
 load_dotenv()
@@ -30,7 +28,9 @@ def train_precipitation_model():
                 temperatura_ar,
                 umidade_relativa,
                 pressao_atm_estacao,
-                radiacao_global
+                radiacao_global,
+                temperatura_max,
+                temperatura_min
             FROM meteo_data
             WHERE precipitacao_total IS NOT NULL
             ORDER BY data, hora
@@ -41,27 +41,43 @@ def train_precipitation_model():
             return
         
         # Engenharia de features
-        df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + pd.to_datetime(df['hora'], format='%H:%M:%S').dt.strftime('%H:%M:%S')
-        df['hour'] = pd.to_datetime(df['datetime']).dt.hour
-        df['day_of_week'] = pd.to_datetime(df['datetime']).dt.dayofweek
-        df['month'] = pd.to_datetime(df['datetime']).dt.month
+        try:
+            df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+            df['hour'] = df['datetime'].dt.hour
+            df['day_of_week'] = df['datetime'].dt.dayofweek
+            df['month'] = df['datetime'].dt.month
+        except Exception as e:
+            logging.error(f"Erro ao criar features: {str(e)}")
+            return
         
         # Preparar dados
         features = [
             'temperatura_ar', 'umidade_relativa', 
             'pressao_atm_estacao', 'radiacao_global',
+            'temperatura_max', 'temperatura_min',
             'hour', 'day_of_week', 'month'
         ]
         target = 'precipitacao_total'
         
+        # Verificar colunas disponíveis
+        available_features = [col for col in features if col in df.columns]
+        missing_features = set(features) - set(available_features)
+        
+        if missing_features:
+            logging.warning(f"Features ausentes: {', '.join(missing_features)}")
+        
+        if not available_features:
+            logging.error("Nenhuma feature disponível para treinamento")
+            return
+            
         # Remover linhas com valores faltantes
-        df_clean = df.dropna(subset=features + [target])
+        df_clean = df.dropna(subset=available_features + [target])
         
         if df_clean.empty:
             logging.warning("Dados insuficientes após limpeza")
             return
             
-        X = df_clean[features]
+        X = df_clean[available_features]
         y = df_clean[target]
         
         # Dividir dados
@@ -70,15 +86,18 @@ def train_precipitation_model():
         )
         
         # Treinar modelo
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         model.fit(X_train, y_train)
         
         # Avaliar
         preds = model.predict(X_test)
         mae = mean_absolute_error(y_test, preds)
         logging.info(f"MAE do modelo: {mae:.2f} mm")
+        logging.info(f"Tamanho do conjunto de treino: {len(X_train)}")
+        logging.info(f"Tamanho do conjunto de teste: {len(X_test)}")
         
         # Salvar modelo
+        os.makedirs('models', exist_ok=True)
         joblib.dump(model, 'models/precipitation_model.pkl')
         logging.info("Modelo salvo em models/precipitation_model.pkl")
         
