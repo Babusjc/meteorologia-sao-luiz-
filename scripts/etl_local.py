@@ -1,11 +1,17 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from scripts.database import NeonDB
-from dotenv import load_dotenv
 import logging
 import re
+
+# Adiciona o diretório pai ao path para resolver imports
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+# Agora importe o módulo database
+from scripts.database import NeonDB
+from dotenv import load_dotenv
 
 # Configuração
 load_dotenv()
