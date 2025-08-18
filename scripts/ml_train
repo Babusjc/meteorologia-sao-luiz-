@@ -7,6 +7,14 @@ import joblib
 from scripts.database import NeonDB
 from dotenv import load_dotenv
 import logging
+import sys
+from pathlib import Path
+
+# Adiciona o diretório pai ao path para resolver imports
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+# Agora importe o módulo database
+from scripts.database import NeonDB
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
