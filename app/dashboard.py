@@ -55,7 +55,7 @@ if len(date_range) == 2:
 
 # Criar coluna datetime combinada
 if 'data' in df.columns and 'hora' in df.columns:
-    df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str)
+    df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
     df['hour'] = df['datetime'].dt.hour
     df['weekday'] = df['datetime'].dt.dayofweek
     df['month'] = df['datetime'].dt.month
