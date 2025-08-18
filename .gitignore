@@ -1,0 +1,32 @@
+# Arquivos de ambiente
+.env
+
+# Dados brutos e processados
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Modelos treinados
+models/*
+!models/.gitkeep
+
+# Arquivos de IDE
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs e arquivos temporários
+*.log
+*.tmp
+*.bak
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de notebook
+*.ipynb
+*.ipynb_checkpoints
