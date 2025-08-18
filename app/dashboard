@@ -1,0 +1,159 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from scripts.database import NeonDB
+from dotenv import load_dotenv
+import numpy as np
+from datetime import datetime, timedelta
+
+# Configuração
+load_dotenv()
+st.set_page_config(page_title="Dados Meteorológicos", layout="wide")
+db = NeonDB()
+
+# Título
+st.title("🌦️ Dashboard Meteorológico - São Luiz do Paraitinga")
+st.markdown("Dados da estação INMET A740 atualizados automaticamente")
+
+# Filtros
+st.sidebar.header("Filtros")
+default_start = datetime.now() - timedelta(days=30)
+date_range = st.sidebar.date_input("Período", [default_start, datetime.now()])
+show_raw = st.sidebar.checkbox("Mostrar dados brutos")
+
+# Recuperar dados com cache
+@st.cache_data(ttl=3600)
+def load_data():
+    return db.get_data("""
+        SELECT 
+            data, hora,
+            precipitacao_total,
+            pressao_atm_estacao,
+            temperatura_ar,
+            umidade_relativa,
+            vento_velocidade,
+            vento_direcao,
+            radiacao_global,
+            temperatura_max,
+            temperatura_min
+        FROM meteo_data
+        ORDER BY data DESC, hora DESC
+    """)
+
+df = load_data()
+
+# Processar filtros
+if len(date_range) == 2:
+    df = df[(df['data'] >= pd.to_datetime(date_range[0])) & 
+            (df['data'] <= pd.to_datetime(date_range[1]))]
+
+# Criar coluna datetime combinada
+df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str)
+
+# KPIs
+col1, col2, col3, col4 = st.columns(4)
+if not df.empty:
+    col1.metric("Temperatura Média", f"{df['temperatura_ar'].mean():.1f}°C")
+    col2.metric("Umidade Relativa", f"{df['umidade_relativa'].mean():.1f}%")
+    col3.metric("Precipitação Total", f"{df['precipitacao_total'].sum():.1f} mm")
+    col4.metric("Velocidade do Vento", f"{df['vento_velocidade'].mean():.1f} m/s")
+else:
+    st.warning("Sem dados disponíveis para o período selecionado")
+
+# Tabs para diferentes visualizações
+tab1, tab2, tab3, tab4 = st.tabs(["Temperatura", "Umidade", "Precipitação", "Pressão"])
+
+with tab1:
+    if not df.empty:
+        fig_temp = go.Figure()
+        fig_temp.add_trace(go.Scatter(
+            x=df['datetime'], 
+            y=df['temperatura_ar'], 
+            name='Temperatura',
+            line=dict(color='red')
+        ))
+        fig_temp.add_trace(go.Scatter(
+            x=df['datetime'], 
+            y=df['temperatura_max'], 
+            name='Máxima',
+            line=dict(color='darkred', dash='dash')
+        ))
+        fig_temp.add_trace(go.Scatter(
+            x=df['datetime'], 
+            y=df['temperatura_min'], 
+            name='Mínima',
+            line=dict(color='blue', dash='dash')
+        ))
+        fig_temp.update_layout(
+            title="Variação de Temperatura",
+            yaxis_title="Temperatura (°C)",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_temp, use_container_width=True)
+    else:
+        st.write("Sem dados de temperatura")
+
+with tab2:
+    if not df.empty:
+        fig_umidade = px.line(
+            df, 
+            x='datetime', 
+            y='umidade_relativa', 
+            title="Umidade Relativa",
+            labels={'umidade_relativa': 'Umidade (%)'}
+        )
+        st.plotly_chart(fig_umidade, use_container_width=True)
+    else:
+        st.write("Sem dados de umidade")
+
+with tab3:
+    if not df.empty:
+        fig_precip = px.bar(
+            df, 
+            x='datetime', 
+            y='precipitacao_total', 
+            title="Precipitação",
+            labels={'precipitacao_total': 'Precipitação (mm)'}
+        )
+        st.plotly_chart(fig_precip, use_container_width=True)
+    else:
+        st.write("Sem dados de precipitação")
+
+with tab4:
+    if not df.empty:
+        fig_pressao = px.line(
+            df, 
+            x='datetime', 
+            y='pressao_atm_estacao', 
+            title="Pressão Atmosférica",
+            labels={'pressao_atm_estacao': 'Pressão (mB)'}
+        )
+        st.plotly_chart(fig_pressao, use_container_width=True)
+    else:
+        st.write("Sem dados de pressão")
+
+# Gráfico de radar para vento
+st.subheader("Direção do Vento")
+if not df.empty and 'vento_direcao' in df.columns:
+    vento_df = df.dropna(subset=['vento_direcao', 'vento_velocidade'])
+    if not vento_df.empty:
+        fig_vento = px.bar_polar(
+            vento_df, 
+            r="vento_velocidade",
+            theta="vento_direcao",
+            color="temperatura_ar",
+            template="plotly_dark",
+            color_continuous_scale=px.colors.sequential.Plasma_r,
+            title="Direção e Velocidade do Vento"
+        )
+        st.plotly_chart(fig_vento, use_container_width=True)
+    else:
+        st.warning("Sem dados de direção do vento para o período selecionado")
+else:
+    st.warning("Coluna 'vento_direcao' não encontrada nos dados")
+
+# Dados brutos
+if show_raw and not df.empty:
+    st.subheader("Dados Brutos")
+    st.dataframe(df.sort_values('datetime', ascending=False))
