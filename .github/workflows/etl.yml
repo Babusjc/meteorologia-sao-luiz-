@@ -9,7 +9,7 @@ jobs:
   run-etl:
     runs-on: ubuntu-latest
     env:
-      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}  # USANDO SECRET
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
     
     steps:
     - name: Checkout code
@@ -30,18 +30,23 @@ jobs:
         # Criar estrutura de diretórios
         mkdir -p data/raw
         mkdir -p data/processed
+        mkdir -p models
         
-        # Simular dados brutos (substitua por sua lógica real de obtenção)
-        echo "Este é um teste" > data/raw/test.txt
+        # Simular dados brutos
+        echo "Arquivos de dados serão obtidos aqui" > data/raw/placeholder.txt
         
         # Executar ETL
         python scripts/etl_local.py
         
-    - name: Commit processed data
+        # Treinar modelo
+        python scripts/ml_train.py
+        
+    - name: Commit processed data and models
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add data/processed/*
-        git commit -m "Update processed data" || echo "No changes to commit"
+        git add models/*
+        git commit -m "Update processed data and models" || echo "No changes to commit"
         git push
         
