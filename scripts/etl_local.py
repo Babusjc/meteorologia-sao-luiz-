@@ -15,8 +15,9 @@ from dotenv import load_dotenv
 
 # Configuração
 load_dotenv()
-RAW_DATA_DIR = Path("C:/Users/josesantos/Downloads/dados")
+RAW_DATA_DIR = Path("data/raw")  # Agora usando caminho relativo
 PROCESSED_DIR = Path("data/processed")
+os.makedirs(RAW_DATA_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -99,7 +100,14 @@ def main():
         return
     
     processed_files = []
-    for file in RAW_DATA_DIR.iterdir():
+    
+    # Lista todos os arquivos no diretório
+    files = list(RAW_DATA_DIR.glob('*.csv'))
+    if not files:
+        logging.warning(f"Nenhum arquivo CSV encontrado em {RAW_DATA_DIR}")
+        return
+    
+    for file in files:
         if file.is_file() and file.suffix.lower() == '.csv':
             logging.info(f"Processando: {file.name}")
             try:
@@ -108,6 +116,7 @@ def main():
                 if not df.empty:
                     # Salvar versão processada
                     processed_path = PROCESSED_DIR / f"processed_{file.stem}.csv"
+                    os.makedirs(processed_path.parent, exist_ok=True)
                     df.to_csv(processed_path, index=False)
                     
                     # Enviar para o Neon
