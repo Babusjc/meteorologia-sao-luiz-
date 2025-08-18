@@ -19,6 +19,7 @@ class NeonDB:
         
         try:
             self.engine = create_engine(self.conn_str)
+            logging.info("Conexão com o banco de dados estabelecida com sucesso")
         except Exception as e:
             logging.error(f"Erro ao criar engine: {str(e)}")
             raise
@@ -55,7 +56,7 @@ class NeonDB:
             with self.engine.connect() as conn:
                 conn.execute(text(create_table_sql))
                 conn.commit()
-            logging.info("Tabela meteo_data criada/verificada")
+            logging.info("Tabela meteo_data criada/verificada com sucesso")
         except Exception as e:
             logging.error(f"Erro ao criar tabela: {str(e)}")
             raise
@@ -66,66 +67,48 @@ class NeonDB:
             logging.warning("DataFrame vazio, nada para enviar")
             return
         
+        # Lista de colunas necessárias
+        required_columns = [
+            'data', 'horas', 'precipitacao_total', 'pressao_atm_estacao',
+            'pressao_atm_max', 'pressao_atm_min', 'radiacao_global',
+            'temperatura_ar', 'temperatura_orvalho', 'temperatura_max',
+            'temperatura_min', 'temperatura_orvalho_max', 'temperatura_orvalho_min',
+            'umidade_rel_max', 'umidade_rel_min', 'umidade_relativa',
+            'vento_direcao', 'vento_rajada_max', 'vento_velocidade'
+        ]
+        
+        # Verifica se todas as colunas necessárias existem
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logging.warning(f"Colunas ausentes no DataFrame: {', '.join(missing_columns)}")
+        
         # Preparar os dados para inserção
         records = []
         for _, row in df.iterrows():
             try:
-                record = (
-                    row['data'], row['horas'], 
-                    row.get('precipitacao_total', None),
-                    row.get('pressao_atm_estacao', None),
-                    row.get('pressao_atm_max', None),
-                    row.get('pressao_atm_min', None),
-                    row.get('radiacao_global', None),
-                    row.get('temperatura_ar', None),
-                    row.get('temperatura_orvalho', None),
-                    row.get('temperatura_max', None),
-                    row.get('temperatura_min', None),
-                    row.get('temperatura_orvalho_max', None),
-                    row.get('temperatura_orvalho_min', None),
-                    row.get('umidade_rel_max', None),
-                    row.get('umidade_rel_min', None),
-                    row.get('umidade_relativa', None),
-                    row.get('vento_direcao', None),
-                    row.get('vento_rajada_max', None),
-                    row.get('vento_velocidade', None)
+                record = tuple(
+                    row[col] if col in row and not pd.isna(row[col]) else None
+                    for col in required_columns
                 )
                 records.append(record)
             except Exception as e:
                 logging.error(f"Erro ao preparar linha: {str(e)}")
+                logging.error(f"Conteúdo da linha: {row}")
         
         if not records:
             logging.warning("Nenhum registro válido para enviar")
             return
         
         # Query de inserção
-        insert_sql = """
-        INSERT INTO meteo_data (
-            data, hora, precipitacao_total, pressao_atm_estacao, 
-            pressao_atm_max, pressao_atm_min, radiacao_global, 
-            temperatura_ar, temperatura_orvalho, temperatura_max, 
-            temperatura_min, temperatura_orvalho_max, temperatura_orvalho_min,
-            umidade_rel_max, umidade_rel_min, umidade_relativa,
-            vento_direcao, vento_rajada_max, vento_velocidade
-        ) VALUES %s
+        columns_str = ', '.join(required_columns)
+        placeholders = ', '.join(['%s'] * len(required_columns))
+        update_str = ', '.join([f"{col} = EXCLUDED.{col}" for col in required_columns if col not in ['data', 'hora']])
+        
+        insert_sql = f"""
+        INSERT INTO meteo_data ({columns_str})
+        VALUES ({placeholders})
         ON CONFLICT (data, hora) DO UPDATE SET
-            precipitacao_total = EXCLUDED.precipitacao_total,
-            pressao_atm_estacao = EXCLUDED.pressao_atm_estacao,
-            pressao_atm_max = EXCLUDED.pressao_atm_max,
-            pressao_atm_min = EXCLUDED.pressao_atm_min,
-            radiacao_global = EXCLUDED.radiacao_global,
-            temperatura_ar = EXCLUDED.temperatura_ar,
-            temperatura_orvalho = EXCLUDED.temperatura_orvalho,
-            temperatura_max = EXCLUDED.temperatura_max,
-            temperatura_min = EXCLUDED.temperatura_min,
-            temperatura_orvalho_max = EXCLUDED.temperatura_orvalho_max,
-            temperatura_orvalho_min = EXCLUDED.temperatura_orvalho_min,
-            umidade_rel_max = EXCLUDED.umidade_rel_max,
-            umidade_rel_min = EXCLUDED.umidade_rel_min,
-            umidade_relativa = EXCLUDED.umidade_relativa,
-            vento_direcao = EXCLUDED.vento_direcao,
-            vento_rajada_max = EXCLUDED.vento_rajada_max,
-            vento_velocidade = EXCLUDED.vento_velocidade
+            {update_str}
         """
         
         try:
@@ -136,7 +119,8 @@ class NeonDB:
                 cur,
                 insert_sql,
                 records,
-                template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                template=f"({', '.join(['%s']*len(required_columns))})",
+                page_size=100
             )
             conn.commit()
             logging.info(f"✅ {len(records)} registros inseridos/atualizados")
