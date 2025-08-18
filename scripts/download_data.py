@@ -1,26 +1,33 @@
 import gdown
 import os
-from pathlib import Path
+import re
 
 def download_from_drive():
-    # URL do diretório do Google Drive
-    folder_url = "https://drive.google.com/drive/folders/1E1MRLUhKHSv6AN1ECagQi2O6NRG1SEUn"
+    # Criar diretório de destino
+    os.makedirs("data/raw", exist_ok=True)
     
-    # Diretório local para salvar os arquivos
-    output_dir = Path("data/raw")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # URL do Google Drive
+    url = "https://drive.google.com/drive/folders/1kOwFv8wWOy6xGfdLZZNKsLG9C5mRceFP"
     
-    # Baixa todos os arquivos do diretório
+    # Configurações para lidar com nomes de arquivos
     gdown.download_folder(
-        folder_url,
-        output=str(output_dir),
+        url,
+        output="data/raw",
         quiet=False,
-        use_cookies=False
+        use_cookies=False,
+        remaining_ok=True,
+        fuzzy=True,
+        resume_download=True
     )
-    
-    # Lista arquivos baixados
-    downloaded_files = list(output_dir.glob('*'))
-    print(f"Baixados {len(downloaded_files)} arquivos do Google Drive")
+
+    # Renomear arquivos para remover caracteres problemáticos
+    for filename in os.listdir("data/raw"):
+        if " " in filename or "(" in filename or ")" in filename:
+            new_name = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+            os.rename(
+                os.path.join("data/raw", filename),
+                os.path.join("data/raw", new_name)
+            )
 
 if __name__ == "__main__":
     download_from_drive()
