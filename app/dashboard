@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from scripts.database import NeonDB
 from dotenv import load_dotenv
+import joblib
 import numpy as np
 from datetime import datetime, timedelta
 
@@ -19,8 +20,9 @@ st.markdown("Dados da estação INMET A740 atualizados automaticamente")
 # Filtros
 st.sidebar.header("Filtros")
 default_start = datetime.now() - timedelta(days=30)
-date_range = st.sidebar.date_input("Período", [default_start, datetime.now()])
+date_range = st.sidebar.date_input("Período", [default_start.date(), datetime.now().date()])
 show_raw = st.sidebar.checkbox("Mostrar dados brutos")
+show_predictions = st.sidebar.checkbox("Mostrar previsões")
 
 # Recuperar dados com cache
 @st.cache_data(ttl=3600)
@@ -45,21 +47,43 @@ df = load_data()
 
 # Processar filtros
 if len(date_range) == 2:
-    df = df[(df['data'] >= pd.to_datetime(date_range[0])) & 
-            (df['data'] <= pd.to_datetime(date_range[1]))]
+    start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    df = df[(df['data'] >= start_date) & (df['data'] <= end_date)]
 
 # Criar coluna datetime combinada
 df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str)
 
 # KPIs
-col1, col2, col3, col4 = st.columns(4)
 if not df.empty:
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Temperatura Média", f"{df['temperatura_ar'].mean():.1f}°C")
     col2.metric("Umidade Relativa", f"{df['umidade_relativa'].mean():.1f}%")
     col3.metric("Precipitação Total", f"{df['precipitacao_total'].sum():.1f} mm")
     col4.metric("Velocidade do Vento", f"{df['vento_velocidade'].mean():.1f} m/s")
-else:
-    st.warning("Sem dados disponíveis para o período selecionado")
+
+# Previsões
+if show_predictions:
+    st.subheader("Previsão de Precipitação")
+    try:
+        model = joblib.load('models/precipitation_model.pkl')
+        
+        # Criar dados de exemplo para previsão
+        sample_data = {
+            'temperatura_ar': [25.0],
+            'umidade_relativa': [70.0],
+            'pressao_atm_estacao': [1013.0],
+            'radiacao_global': [500.0],
+            'hour': [12],
+            'day_of_week': [3],
+            'month': [7]
+        }
+        sample_df = pd.DataFrame(sample_data)
+        
+        prediction = model.predict(sample_df)
+        st.metric("Previsão de Precipitação", f"{prediction[0]:.1f} mm")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar modelo: {str(e)}")
 
 # Tabs para diferentes visualizações
 tab1, tab2, tab3, tab4 = st.tabs(["Temperatura", "Umidade", "Precipitação", "Pressão"])
@@ -133,27 +157,7 @@ with tab4:
     else:
         st.write("Sem dados de pressão")
 
-# Gráfico de radar para vento
-st.subheader("Direção do Vento")
-if not df.empty and 'vento_direcao' in df.columns:
-    vento_df = df.dropna(subset=['vento_direcao', 'vento_velocidade'])
-    if not vento_df.empty:
-        fig_vento = px.bar_polar(
-            vento_df, 
-            r="vento_velocidade",
-            theta="vento_direcao",
-            color="temperatura_ar",
-            template="plotly_dark",
-            color_continuous_scale=px.colors.sequential.Plasma_r,
-            title="Direção e Velocidade do Vento"
-        )
-        st.plotly_chart(fig_vento, use_container_width=True)
-    else:
-        st.warning("Sem dados de direção do vento para o período selecionado")
-else:
-    st.warning("Coluna 'vento_direcao' não encontrada nos dados")
-
 # Dados brutos
 if show_raw and not df.empty:
     st.subheader("Dados Brutos")
-    st.dataframe(df.sort_values('datetime', ascending=False))
+    st.dataframe(df.sort_values('datetime', ascending=False).head(100))
