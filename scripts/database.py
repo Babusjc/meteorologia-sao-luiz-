@@ -3,6 +3,7 @@ import psycopg2
 from sqlalchemy import create_engine, text
 import pandas as pd
 from dotenv import load_dotenv
+from psycopg2.extras import execute_values
 
 load_dotenv()
 
@@ -95,11 +96,26 @@ class NeonDB:
             vento_velocidade = EXCLUDED.vento_velocidade
         """
         
-        # Executa a inserção
-        with self.engine.connect() as conn:
-            conn.execute(text(insert_sql), records)
+        # Executa a inserção usando psycopg2 diretamente
+        conn = psycopg2.connect(self.conn_str)
+        cur = conn.cursor()
+        try:
+            execute_values(
+                cur,
+                insert_sql,
+                records,
+                template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            )
             conn.commit()
+            logging.info(f"✅ {len(records)} registros inseridos/atualizados")
+        except Exception as e:
+            logging.error(f"❌ Erro ao inserir dados: {str(e)}")
+            conn.rollback()
+        finally:
+            cur.close()
+            conn.close()
     
     def get_data(self, query: str = "SELECT * FROM meteo_data"):
         """Recupera dados do banco"""
         return pd.read_sql(query, self.engine)
+        
