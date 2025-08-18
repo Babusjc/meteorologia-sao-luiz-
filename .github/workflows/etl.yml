@@ -25,21 +25,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run ETL
+    - name: Run ETL and ML training
       run: |
         # Criar estrutura de diretórios
         mkdir -p data/raw
         mkdir -p data/processed
         mkdir -p models
         
-        # Simular dados brutos
-        echo "Arquivos de dados serão obtidos aqui" > data/raw/placeholder.txt
-        
-        # Executar ETL
-        python scripts/etl_local.py
+        # Executar ETL (usando caminho absoluto)
+        python $GITHUB_WORKSPACE/scripts/etl_local.py
         
         # Treinar modelo
-        python scripts/ml_train.py
+        python $GITHUB_WORKSPACE/scripts/ml_train.py
         
     - name: Commit processed data and models
       run: |
@@ -49,4 +46,3 @@ jobs:
         git add models/*
         git commit -m "Update processed data and models" || echo "No changes to commit"
         git push
-        
