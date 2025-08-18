@@ -8,20 +8,17 @@ import logging
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
+load_dotenv()
 
 class NeonDB:
     def __init__(self):
-        # Tentar carregar do .env primeiro, depois do ambiente
-        load_dotenv()
         self.conn_str = os.getenv("NEON_DATABASE_URL")
-        
         if not self.conn_str:
             logging.error("NEON_DATABASE_URL não encontrada nas variáveis de ambiente")
             raise ValueError("String de conexão do Neon não configurada")
         
         try:
             self.engine = create_engine(self.conn_str)
-            logging.info("Engine do SQLAlchemy criado com sucesso")
         except Exception as e:
             logging.error(f"Erro ao criar engine: {str(e)}")
             raise
@@ -75,10 +72,23 @@ class NeonDB:
             try:
                 record = (
                     row['data'], row['horas'], 
-                    float(row['precipitacao_total']) if not pd.isna(row['precipitacao_total']) else None,
-                    float(row['pressao_atm_estacao']) if not pd.isna(row['pressao_atm_estacao']) else None,
-                    # ... repetir para todas as colunas numéricas ...
-                    float(row['vento_velocidade']) if not pd.isna(row['vento_velocidade']) else None
+                    row.get('precipitacao_total', None),
+                    row.get('pressao_atm_estacao', None),
+                    row.get('pressao_atm_max', None),
+                    row.get('pressao_atm_min', None),
+                    row.get('radiacao_global', None),
+                    row.get('temperatura_ar', None),
+                    row.get('temperatura_orvalho', None),
+                    row.get('temperatura_max', None),
+                    row.get('temperatura_min', None),
+                    row.get('temperatura_orvalho_max', None),
+                    row.get('temperatura_orvalho_min', None),
+                    row.get('umidade_rel_max', None),
+                    row.get('umidade_rel_min', None),
+                    row.get('umidade_relativa', None),
+                    row.get('vento_direcao', None),
+                    row.get('vento_rajada_max', None),
+                    row.get('vento_velocidade', None)
                 )
                 records.append(record)
             except Exception as e:
@@ -147,4 +157,3 @@ class NeonDB:
         except Exception as e:
             logging.error(f"Erro ao recuperar dados: {str(e)}")
             return pd.DataFrame()
-        
