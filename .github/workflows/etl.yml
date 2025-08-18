@@ -9,7 +9,7 @@ jobs:
   run-etl:
     runs-on: ubuntu-latest
     env:
-      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}  # USANDO SECRET
     
     steps:
     - name: Checkout code
@@ -27,12 +27,14 @@ jobs:
         
     - name: Run ETL
       run: |
-        # Cria diretório para dados brutos
+        # Criar estrutura de diretórios
         mkdir -p data/raw
-        # Simula a cópia dos dados (em produção, adicionar lógica real)
-        echo "Simulando cópia de dados brutos..."
+        mkdir -p data/processed
         
-        # Executa o ETL
+        # Simular dados brutos (substitua por sua lógica real de obtenção)
+        echo "Este é um teste" > data/raw/test.txt
+        
+        # Executar ETL
         python scripts/etl_local.py
         
     - name: Commit processed data
@@ -42,5 +44,4 @@ jobs:
         git add data/processed/*
         git commit -m "Update processed data" || echo "No changes to commit"
         git push
-
         
