@@ -5,6 +5,10 @@ on:
     - cron: '0 0 * * *'  # Executa diariamente à meia-noite
   workflow_dispatch:
 
+# Adicionar permissões para permitir push
+permissions:
+  contents: write
+
 jobs:
   download-and-process:
     runs-on: ubuntu-latest
@@ -12,6 +16,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Importante para o git push funcionar
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -30,7 +36,7 @@ jobs:
 
     - name: RUN ETL and ML Training
       env:
-        NEON_DB_URL: ${{ secrets.NEON_DB_URL }}  # Corrigido para NEON_DB_URL
+        NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
       run: |
         mkdir -p data/processed
         mkdir -p models
@@ -43,11 +49,11 @@ jobs:
 
     - name: Commit processed data
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Token automático do GitHub
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add data/processed/*
         git add models/*
         git commit -m "Update processed data and models" || echo "No changes to commit"
-        git push
+        git push origin main  # Especificar o branch principal
