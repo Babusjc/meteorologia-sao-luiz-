@@ -35,6 +35,10 @@ def clean_and_transform():
     # Listar arquivos CSV
     csv_files = list(raw_dir.glob("*.csv"))
     
+    if not csv_files:
+        logging.warning("Nenhum arquivo CSV encontrado para processamento")
+        return
+    
     # Processar cada arquivo
     dfs = []
     for file in csv_files:
@@ -101,21 +105,8 @@ def clean_and_transform():
         
         # Inserir no banco de dados
         try:
-            # Renomear colunas para corresponder ao schema do banco
-            db_df = combined_df.rename(columns={
-                "precipitacao_total": "precipitacao_total",
-                "pressao_atm_estacao": "pressao_atm_estacao",
-                "temperatura_ar": "temperatura_ar",
-                "umidade_relativa": "umidade_relativa",
-                "vento_velocidade": "vento_velocidade",
-                "vento_direcao": "vento_direcao",
-                "radiacao_global": "radiacao_global",
-                "temperatura_max": "temperatura_max",
-                "temperatura_min": "temperatura_min"
-            })
-            
             # Inserir dados
-            success = db.insert_data(db_df, "meteo_data")
+            success = db.insert_data(combined_df, "meteo_data")
             if success:
                 logging.info("Dados inseridos no banco com sucesso")
             else:
@@ -127,4 +118,6 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
+
+
     
