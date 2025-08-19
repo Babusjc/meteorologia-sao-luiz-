@@ -1,36 +1,36 @@
-name: ETL Pipeline
+name: Data Pipeline
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 3 * * *'  # Executa diariamente às 3AM UTC
+    - cron: '0 0 * * *'  # Executa diariamente à meia-noite
+  workflow_dispatch:
 
 jobs:
-  run-etl:
+  download-and-process:
     runs-on: ubuntu-latest
-    env:
-      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-    
+
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v3
-      
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Download data from Google Drive
+
+    - name: Download data
       run: |
         mkdir -p data/raw
         python scripts/download_data.py
-        
-    - name: Run ETL and ML training
+
+    - name: RUN ETL and ML Training
+      env:
+        NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
       run: |
         mkdir -p data/processed
         mkdir -p models
@@ -39,9 +39,9 @@ jobs:
         python scripts/etl_local.py
         
         # Treinar modelo
-        python scripts/ml_train.py
-        
-    - name: Commit processed data and models
+        python scripts/train_model.py
+
+    - name: Commit processed data
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
