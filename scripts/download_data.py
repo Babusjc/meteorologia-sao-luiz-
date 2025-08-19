@@ -1,8 +1,9 @@
 import gdown
 import os
-import re
+import requests
+from urllib.parse import urlparse, parse_qs
 
-# Mapeamento direto dos IDs dos arquivos (mais confiável)
+# Mapeamento direto dos IDs dos arquivos
 FILE_MAPPING = {
     "INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2007.csv": "1kOwFv8wWOy6xGfdLZZNKsLG9C5mRceFP",
     "INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2008.csv": "1DnYyfo25569GKsc8U4fEoLsDskSueyM7",
@@ -36,12 +37,22 @@ def download_from_drive():
             print(f"Skipping existing file: {filename}")
             continue
             
-        # URL de download
-        url = f"https://drive.google.com/uc?id={file_id}"
+        # URL de download com confirmação
+        url = f"https://drive.google.com/uc?id={file_id}&export=download&confirm=t"
         
         try:
-            gdown.download(url, output_path, quiet=False)
+            # Usar requests para baixar o arquivo
+            session = requests.Session()
+            response = session.get(url, stream=True)
+            
+            # Salvar o arquivo
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=32768):
+                    if chunk:
+                        f.write(chunk)
+            
             print(f"Downloaded: {filename}")
+            
         except Exception as e:
             print(f"Failed to download {filename}: {str(e)}")
 
