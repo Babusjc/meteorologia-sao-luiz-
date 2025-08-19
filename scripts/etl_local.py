@@ -1,131 +1,124 @@
-import os
-import sys
 import pandas as pd
 import numpy as np
+import os
 from pathlib import Path
-import logging
-import re
-
-# Adiciona o diretório pai ao path para resolver imports
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
-# Agora importe o módulo database
 from scripts.database import NeonDB
 from dotenv import load_dotenv
+import logging
 
-# Configuração
-load_dotenv()
-RAW_DATA_DIR = Path("data/raw")  # Agora usando caminho relativo
-PROCESSED_DIR = Path("data/processed")
-os.makedirs(RAW_DATA_DIR, exist_ok=True)
-os.makedirs(PROCESSED_DIR, exist_ok=True)
-
+# Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def clean_value(x):
-    """Converte valores problemáticos para NaN e substitui vírgula por ponto"""
-    if isinstance(x, str):
-        x = x.strip()
-        if x in ['', '-9999']:
-            return np.nan
-        # Substitui vírgula por ponto se for um número com vírgula decimal
-        x = re.sub(r'(\d),(\d)', r'\1.\2', x)
-    return x
-
-def process_file(file_path: Path) -> pd.DataFrame:
-    """Processa um único arquivo de dados"""
-    try:
-        # Lê o CSV com encoding latin-1 e delimitador ; e pula a primeira linha (cabeçalho)
-        df = pd.read_csv(file_path, encoding='latin-1', delimiter=';', skiprows=1, low_memory=False)
-        
-        # Define os cabeçalhos conforme especificado
-        columns = [
-            "data", "horas", "precipitacao_total", "pressao_atm_estacao", 
-            "pressao_atm_max", "pressao_atm_min", "radiacao_global", 
-            "temperatura_ar", "temperatura_orvalho", "temperatura_max", 
-            "temperatura_min", "temperatura_orvalho_max", "temperatura_orvalho_min",
-            "umidade_rel_max", "umidade_rel_min", "umidade_relativa",
-            "vento_direcao", "vento_rajada_max", "vento_velocidade"
-        ]
-        
-        # Verifica se o número de colunas corresponde
-        if len(df.columns) != len(columns):
-            logging.warning(f"O arquivo {file_path.name} tem {len(df.columns)} colunas, mas esperávamos {len(columns)}. Verificando correspondência...")
-            
-            # Tenta usar as colunas existentes se o número for diferente
-            df.columns = df.columns[:len(columns)]
-        else:
-            df.columns = columns
-        
-        # Aplica a limpeza em todas as células
-        for col in df.columns:
-            df[col] = df[col].apply(clean_value)
-        
-        # Converte colunas numéricas para float
-        numeric_cols = columns[2:]  # Todas exceto data e horas
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Converte a coluna de data
-        if 'data' in df.columns:
-            df['data'] = pd.to_datetime(df['data'], format='%d/%m/%Y', errors='coerce')
-        else:
-            logging.error("Coluna 'data' não encontrada no arquivo")
-        
-        # Converte a coluna de horas para tempo
-        if 'horas' in df.columns:
-            try:
-                # Tenta converter para datetime e extrair o tempo
-                df['horas'] = pd.to_datetime(df['horas'], format='%H:%M', errors='coerce').dt.time
-            except Exception as e:
-                logging.error(f"Erro ao converter horas: {str(e)}")
-                # Tenta uma conversão alternativa
-                df['horas'] = pd.to_datetime(df['horas'], errors='coerce').dt.time
-        else:
-            logging.error("Coluna 'horas' não encontrada no arquivo")
-        
-        return df
+def clean_and_transform():
+    # Carregar variáveis de ambiente
+    load_dotenv()
     
-    except Exception as e:
-        logging.error(f"Erro ao processar {file_path.name}: {str(e)}")
-        return pd.DataFrame()
-
-def main():
     try:
+        # Conectar ao banco de dados
         db = NeonDB()
-        db.create_table()
+        logging.info("Conexão com o banco de dados estabelecida com sucesso")
     except Exception as e:
         logging.error(f"Falha ao conectar ao banco de dados: {str(e)}")
         return
+
+    # Configurar caminhos
+    raw_dir = Path("data/raw")
+    processed_dir = Path("data/processed")
+    processed_dir.mkdir(parents=True, exist_ok=True)
     
-    processed_files = []
+    # Listar arquivos CSV
+    csv_files = list(raw_dir.glob("*.csv"))
     
-    # Lista todos os arquivos no diretório
-    files = list(RAW_DATA_DIR.glob('*.csv'))
-    if not files:
-        logging.warning(f"Nenhum arquivo CSV encontrado em {RAW_DATA_DIR}")
-        return
+    # Processar cada arquivo
+    dfs = []
+    for file in csv_files:
+        try:
+            # Ler arquivo CSV
+            df = pd.read_csv(
+                file,
+                sep=";",
+                decimal=",",
+                encoding="latin1",
+                on_bad_lines="skip",
+                na_values=["", " ", "null", "NaN"]
+            )
+            
+            # Padronizar nomes de colunas
+            df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+            
+            # Converter datas
+            if "data" in df.columns and "hora" in df.columns:
+                df["datetime"] = pd.to_datetime(
+                    df["data"].astype(str) + " " + df["hora"].astype(str),
+                    errors="coerce"
+                )
+            elif "data" in df.columns:
+                df["datetime"] = pd.to_datetime(df["data"], errors="coerce")
+            
+            # Adicionar metadados temporais
+            if "datetime" in df.columns:
+                df["hour"] = df["datetime"].dt.hour
+                df["weekday"] = df["datetime"].dt.dayofweek
+                df["month"] = df["datetime"].dt.month
+            
+            # Selecionar colunas relevantes
+            relevant_cols = [
+                "datetime", "precipitacao_total", "pressao_atm_estacao",
+                "temperatura_ar", "umidade_relativa", "vento_velocidade",
+                "vento_direcao", "radiacao_global", "temperatura_max",
+                "temperatura_min", "hour", "weekday", "month"
+            ]
+            
+            # Filtrar colunas existentes
+            available_cols = [col for col in relevant_cols if col in df.columns]
+            df = df[available_cols]
+            
+            dfs.append(df)
+            logging.info(f"Processado {file.name} com sucesso")
+            
+        except Exception as e:
+            logging.error(f"Erro ao processar {file.name}: {str(e)}")
     
-    for file in files:
-        if file.is_file() and file.suffix.lower() == '.csv':
-            logging.info(f"Processando: {file.name}")
-            try:
-                df = process_file(file)
-                
-                if not df.empty:
-                    # Salvar versão processada
-                    processed_path = PROCESSED_DIR / f"processed_{file.stem}.csv"
-                    os.makedirs(processed_path.parent, exist_ok=True)
-                    df.to_csv(processed_path, index=False)
-                    
-                    # Enviar para o Neon
-                    db.upload_data(df)
-                    processed_files.append(file.name)
-            except Exception as e:
-                logging.error(f"Erro ao processar {file.name}: {str(e)}")
-    
-    logging.info(f"Processamento completo! {len(processed_files)} arquivos enviados")
+    # Combinar todos os dados
+    if dfs:
+        combined_df = pd.concat(dfs, ignore_index=True)
+        
+        # Remover duplicatas
+        combined_df = combined_df.drop_duplicates(subset="datetime", keep="last")
+        
+        # Ordenar por data
+        combined_df = combined_df.sort_values("datetime")
+        
+        # Salvar dados processados
+        combined_df.to_parquet(processed_dir / "processed_weather_data.parquet", index=False)
+        logging.info(f"Dados processados salvos com {len(combined_df)} registros")
+        
+        # Inserir no banco de dados
+        try:
+            # Renomear colunas para corresponder ao schema do banco
+            db_df = combined_df.rename(columns={
+                "precipitacao_total": "precipitacao_total",
+                "pressao_atm_estacao": "pressao_atm_estacao",
+                "temperatura_ar": "temperatura_ar",
+                "umidade_relativa": "umidade_relativa",
+                "vento_velocidade": "vento_velocidade",
+                "vento_direcao": "vento_direcao",
+                "radiacao_global": "radiacao_global",
+                "temperatura_max": "temperatura_max",
+                "temperatura_min": "temperatura_min"
+            })
+            
+            # Inserir dados
+            success = db.insert_data(db_df, "meteo_data")
+            if success:
+                logging.info("Dados inseridos no banco com sucesso")
+            else:
+                logging.error("Falha ao inserir dados no banco")
+        except Exception as e:
+            logging.error(f"Erro ao inserir dados no banco: {str(e)}")
+    else:
+        logging.warning("Nenhum dado processado")
 
 if __name__ == "__main__":
-    main()
+    clean_and_transform()
+    
