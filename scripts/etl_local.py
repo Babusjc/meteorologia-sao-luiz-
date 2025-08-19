@@ -2,9 +2,15 @@ import pandas as pd
 import numpy as np
 import os
 from pathlib import Path
-from scripts.database import NeonDB
+import sys
 from dotenv import load_dotenv
 import logging
+
+# Adicionar o diretório pai ao path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+# Agora importar o módulo
+from scripts.database import NeonDB
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
