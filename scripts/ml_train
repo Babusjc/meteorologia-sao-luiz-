@@ -7,19 +7,28 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 import joblib
 from pathlib import Path
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def train_precipitation_model():
     # Carregar dados processados
     data_path = Path("data/processed/processed_weather_data.parquet")
     if not data_path.exists():
-        print("Processed data not found")
+        logging.error("Dados processados não encontrados")
         return
     
-    df = pd.read_parquet(data_path)
+    try:
+        df = pd.read_parquet(data_path)
+        logging.info(f"Dados carregados com {len(df)} registros")
+    except Exception as e:
+        logging.error(f"Erro ao carregar dados: {str(e)}")
+        return
     
     # Preparar dados para modelagem
     if "precipitacao_total" not in df.columns:
-        print("Precipitation data missing")
+        logging.error("Dados de precipitação ausentes")
         return
     
     # Criar variável alvo (próxima hora)
@@ -45,7 +54,7 @@ def train_precipitation_model():
     df = df.dropna(subset=features + ["rain_class"])
     
     if df.empty:
-        print("No data available for training")
+        logging.error("Nenhum dado disponível para treinamento")
         return
     
     X = df[features]
@@ -56,29 +65,37 @@ def train_precipitation_model():
         X, y, test_size=0.2, random_state=42, stratify=y
     )
     
+    logging.info(f"Treinando modelo com {len(X_train)} amostras")
+    
     # Criar e treinar modelo
-    model = make_pipeline(
-        StandardScaler(),
-        RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            class_weight="balanced",
-            random_state=42
+    try:
+        model = make_pipeline(
+            StandardScaler(),
+            RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                class_weight="balanced",
+                random_state=42
+            )
         )
-    )
-    
-    model.fit(X_train, y_train)
-    
-    # Avaliar
-    y_pred = model.predict(X_test)
-    print("Accuracy:", accuracy_score(y_test, y_pred))
-    print("\nClassification Report:\n", classification_report(y_test, y_pred))
-    
-    # Salvar modelo
-    model_dir = Path("models")
-    model_dir.mkdir(exist_ok=True)
-    joblib.dump(model, model_dir / "precipitation_model.pkl")
-    print("Model saved successfully")
+        
+        model.fit(X_train, y_train)
+        logging.info("Modelo treinado com sucesso")
+        
+        # Avaliar
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        logging.info(f"Acurácia: {accuracy:.2f}")
+        logging.info("\nRelatório de Classificação:\n" + classification_report(y_test, y_pred))
+        
+        # Salvar modelo
+        model_dir = Path("models")
+        model_dir.mkdir(exist_ok=True)
+        joblib.dump(model, model_dir / "precipitation_model.pkl")
+        logging.info("Modelo salvo com sucesso")
+        
+    except Exception as e:
+        logging.error(f"Erro ao treinar modelo: {str(e)}")
 
 if __name__ == "__main__":
     train_precipitation_model()
