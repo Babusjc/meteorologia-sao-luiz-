@@ -57,15 +57,23 @@ def train_precipitation_model():
         "hour", "weekday", "month"
     ]
     
+    # Filtrar apenas colunas disponíveis
+    available_features = [f for f in features if f in df.columns]
+    
     # Filtrar dados completos
-    df = df.dropna(subset=features + ["rain_class"])
+    df = df.dropna(subset=available_features + ["rain_class"])
     
     if df.empty:
         logging.error("Nenhum dado disponível para treinamento")
         return
     
-    X = df[features]
+    X = df[available_features]
     y = df["rain_class"]
+    
+    # Verificar se temos dados suficientes para treinamento
+    if len(X) < 100:
+        logging.error(f"Dados insuficientes para treinamento: apenas {len(X)} amostras")
+        return
     
     # Dividir dados
     X_train, X_test, y_train, y_test = train_test_split(
