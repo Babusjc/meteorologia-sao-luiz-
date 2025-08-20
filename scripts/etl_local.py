@@ -56,32 +56,49 @@ def clean_and_transform():
             # Padronizar nomes de colunas
             df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
             
-            # Converter datas
-            if "data" in df.columns and "hora" in df.columns:
-                df["datetime"] = pd.to_datetime(
-                    df["data"].astype(str) + " " + df["hora"].astype(str),
-                    errors="coerce"
-                )
-            elif "data" in df.columns:
-                df["datetime"] = pd.to_datetime(df["data"], errors="coerce")
+            # Renomear colunas para corresponder ao schema do banco
+            column_mapping = {
+                'data': 'data',
+                'horas': 'hora',
+                'precipitação_total': 'precipitacao_total',
+                'pressao_atmosferica_ao_nivel_da_estacao,_horaria_(mb)': 'pressao_atm_estacao',
+                'radiacao_global_(kj/m²)': 'radiacao_global',
+                'temperatura_do_ar_(°c)': 'temperatura_ar',
+                'umidade_relativa_do_ar,_horaria_(%)': 'umidade_relativa',
+                'vento_-_velocidade_horaria_(m/s)': 'vento_velocidade',
+                'vento_-_direção_horaria_(gr)': 'vento_direcao',
+                'temperatura_máxima_na_hora_ant._(°c)': 'temperatura_max',
+                'temperatura_mínima_na_hora_ant._(°c)': 'temperatura_min'
+            }
             
-            # Adicionar metadados temporais
-            if "datetime" in df.columns:
-                df["hour"] = df["datetime"].dt.hour
-                df["weekday"] = df["datetime"].dt.dayofweek
-                df["month"] = df["datetime"].dt.month
+            df = df.rename(columns=column_mapping)
             
-            # Selecionar colunas relevantes
+            # Manter apenas colunas relevantes
             relevant_cols = [
-                "datetime", "precipitacao_total", "pressao_atm_estacao",
+                "data", "hora", "precipitacao_total", "pressao_atm_estacao",
                 "temperatura_ar", "umidade_relativa", "vento_velocidade",
-                "vento_direcao", "radiacao_global", "temperatura_max",
-                "temperatura_min", "hour", "weekday", "month"
+                "vento_direcao", "radiacao_global", "temperatura_max", "temperatura_min"
             ]
             
             # Filtrar colunas existentes
             available_cols = [col for col in relevant_cols if col in df.columns]
             df = df[available_cols]
+            
+            # Converter tipos de dados
+            if 'data' in df.columns:
+                df['data'] = pd.to_datetime(df['data'], errors='coerce').dt.date
+            
+            if 'hora' in df.columns:
+                # Converter hora para formato time
+                df['hora'] = pd.to_datetime(df['hora'], format='%H:%M', errors='coerce').dt.time
+            
+            numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
+                           'umidade_relativa', 'vento_velocidade', 'vento_direcao', 
+                           'radiacao_global', 'temperatura_max', 'temperatura_min']
+            
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
             
             dfs.append(df)
             logging.info(f"Processado {file.name} com sucesso")
@@ -94,10 +111,10 @@ def clean_and_transform():
         combined_df = pd.concat(dfs, ignore_index=True)
         
         # Remover duplicatas
-        combined_df = combined_df.drop_duplicates(subset="datetime", keep="last")
+        combined_df = combined_df.drop_duplicates(subset=["data", "hora"], keep="last")
         
-        # Ordenar por data
-        combined_df = combined_df.sort_values("datetime")
+        # Ordenar por data e hora
+        combined_df = combined_df.sort_values(["data", "hora"])
         
         # Salvar dados processados
         combined_df.to_parquet(processed_dir / "processed_weather_data.parquet", index=False)
@@ -118,6 +135,5 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
-
 
     
