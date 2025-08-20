@@ -22,7 +22,7 @@ class NeonDB:
     def get_data(self, query):
         """Executa uma query e retorna um DataFrame"""
         if not self.conn:
-            logging.error("Sem conexão avec le banco de dados")
+            logging.error("Sem conexão com o banco de dados")
             return pd.DataFrame()
             
         try:
@@ -55,8 +55,17 @@ class NeonDB:
                     ON CONFLICT (data, hora) DO NOTHING
                 """
                 
-                # Converter DataFrame para lista de tuplas
-                data = [tuple(row) for row in df.to_numpy()]
+                # Converter DataFrame para lista de tuplas, tratando valores None
+                data = []
+                for row in df.to_numpy():
+                    # Converter valores None para NULL do SQL
+                    processed_row = []
+                    for val in row:
+                        if pd.isna(val):
+                            processed_row.append(None)
+                        else:
+                            processed_row.append(val)
+                    data.append(tuple(processed_row))
                 
                 # Executar inserções
                 cur.executemany(query, data)
