@@ -50,7 +50,7 @@ def clean_and_transform():
                 decimal=",",
                 encoding="latin1",
                 on_bad_lines="skip",
-                na_values=["", " ", "null", "NaN"]
+                na_values=["", " ", "null", "NaN", "null", "NULL"]
             )
             
             # Padronizar nomes de colunas
@@ -89,9 +89,12 @@ def clean_and_transform():
                 df['data'] = pd.to_datetime(df['data'], errors='coerce').dt.date
             
             if 'hora' in df.columns:
-                # Converter hora para formato time
+                # Converter hora para formato time, tratando valores inválidos
                 df['hora'] = pd.to_datetime(df['hora'], format='%H:%M', errors='coerce').dt.time
+                # Remover linhas com hora inválida
+                df = df.dropna(subset=['hora'])
             
+            # Converter colunas numéricas
             numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
                            'umidade_relativa', 'vento_velocidade', 'vento_direcao', 
                            'radiacao_global', 'temperatura_max', 'temperatura_min']
@@ -99,6 +102,9 @@ def clean_and_transform():
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Remover linhas com dados essenciais faltantes
+            df = df.dropna(subset=['data', 'hora'])
             
             dfs.append(df)
             logging.info(f"Processado {file.name} com sucesso")
