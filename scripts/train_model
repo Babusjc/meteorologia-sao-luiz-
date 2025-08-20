@@ -26,6 +26,13 @@ def train_precipitation_model():
         logging.error(f"Erro ao carregar dados: {str(e)}")
         return
     
+    # Criar coluna datetime combinada para análise temporal
+    if 'data' in df.columns and 'hora' in df.columns:
+        df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+        df['hour'] = df['datetime'].dt.hour
+        df['weekday'] = df['datetime'].dt.dayofweek
+        df['month'] = df['datetime'].dt.month
+    
     # Preparar dados para modelagem
     if "precipitacao_total" not in df.columns:
         logging.error("Dados de precipitação ausentes")
