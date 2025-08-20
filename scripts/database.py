@@ -22,7 +22,7 @@ class NeonDB:
     def get_data(self, query):
         """Executa uma query e retorna um DataFrame"""
         if not self.conn:
-            logging.error("Sem conexão com o banco de dados")
+            logging.error("Sem conexão avec le banco de dados")
             return pd.DataFrame()
             
         try:
@@ -52,7 +52,7 @@ class NeonDB:
                 query = f"""
                     INSERT INTO {table_name} ({cols})
                     VALUES ({placeholders})
-                    ON CONFLICT (datetime) DO NOTHING
+                    ON CONFLICT (data, hora) DO NOTHING
                 """
                 
                 # Converter DataFrame para lista de tuplas
