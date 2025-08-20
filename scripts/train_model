@@ -28,7 +28,14 @@ def train_precipitation_model():
     
     # Criar coluna datetime combinada para análise temporal
     if 'data' in df.columns and 'hora' in df.columns:
-        df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+        # Converter para string e depois para datetime
+        df['datetime'] = pd.to_datetime(
+            df['data'].astype(str) + ' ' + df['hora'].astype(str),
+            errors='coerce'
+        )
+        # Remover linhas com datetime inválido
+        df = df.dropna(subset=['datetime'])
+        
         df['hour'] = df['datetime'].dt.hour
         df['weekday'] = df['datetime'].dt.dayofweek
         df['month'] = df['datetime'].dt.month
