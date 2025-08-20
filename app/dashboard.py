@@ -51,7 +51,7 @@ df = load_data()
 # Processar filtros
 if len(date_range) == 2:
     start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-    df = df[(df['data'] >= start_date) & (df['data'] <= end_date)]
+    df = df[(df['data'] >= start_date.date()) & (df['data'] <= end_date.date())]
 
 # Criar coluna datetime combinada
 if 'data' in df.columns and 'hora' in df.columns:
