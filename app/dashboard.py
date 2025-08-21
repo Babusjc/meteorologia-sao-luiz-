@@ -18,8 +18,7 @@ import plotly.graph_objects as go
 import joblib
 from datetime import datetime, timedelta
 
-# ALTERAÇÃO: A classe NeonDB não é mais importada. Em vez disso,
-# importamos a nova função que usa o sistema de conexão do Streamlit.
+# Importa a função de conexão do script database.py
 from scripts.database import get_data_from_db
 
 # Configuração da página
@@ -37,11 +36,12 @@ show_raw = st.sidebar.checkbox("Mostrar dados brutos")
 show_predictions = st.sidebar.checkbox("Mostrar previsões")
 show_model_info = st.sidebar.checkbox("Mostrar informações do modelo")
 
-# ALTERAÇÃO: A função load_data foi simplificada para usar o novo método.
-# O cache do Streamlit continua funcionando da mesma forma.
+# Função para carregar os dados do banco de dados
 @st.cache_data(ttl=3600, show_spinner="Carregando dados...")
 def load_data():
-    """Busca os dados do banco de dados usando a nova função."""
+    """Busca os dados do banco de dados, solicitando apenas as colunas existentes."""
+    # CORREÇÃO: Removidas as colunas 'pressure_change', 'temp_change_3h',
+    # e 'humidity_trend' da consulta para corresponder ao schema real da tabela.
     query = """
         SELECT 
             data, hora,
@@ -53,10 +53,7 @@ def load_data():
             vento_direcao,
             radiacao_global,
             temperatura_max,
-            temperatura_min,
-            pressure_change,
-            temp_change_3h,
-            humidity_trend
+            temperatura_min
         FROM meteo_data
         ORDER BY data DESC, hora DESC
     """
@@ -95,9 +92,6 @@ if not df.empty:
     if "vento_velocidade" in df.columns:
         col4.metric("Velocidade do Vento", f'{(df["vento_velocidade"].mean()):.1f} m/s')
 
-# O restante do seu script permanece exatamente o mesmo.
-# Copie e cole daqui para baixo sem alterações.
-
 # Informações do modelo
 if show_model_info:
     st.sidebar.subheader("Informações do Modelo")
@@ -130,12 +124,16 @@ if show_predictions and not df.empty:
         st.info(f"Usando modelo {model_type}")
         last_entry = df.iloc[0]
         
+        # As colunas 'pressure_change', etc., não vêm mais do banco.
+        # Usamos .get(col, 0) para fornecer um valor padrão (0) caso a coluna
+        # não exista no DataFrame, evitando erros na previsão.
         prediction_data = {
             "temperatura_ar": [last_entry["temperatura_ar"]], "umidade_relativa": [last_entry["umidade_relativa"]],
             "pressao_atm_estacao": [last_entry["pressao_atm_estacao"]], "radiacao_global": [last_entry["radiacao_global"]],
             "temperatura_max": [last_entry["temperatura_max"]], "temperatura_min": [last_entry["temperatura_min"]],
             "hour": [last_entry["hour"]], "weekday": [last_entry["weekday"]], "month": [last_entry["month"]],
-            "pressure_change": [last_entry.get("pressure_change", 0)], "temp_change_3h": [last_entry.get("temp_change_3h", 0)],
+            "pressure_change": [last_entry.get("pressure_change", 0)],
+            "temp_change_3h": [last_entry.get("temp_change_3h", 0)],
             "humidity_trend": [last_entry.get("humidity_trend", 0)]
         }
         
