@@ -14,7 +14,18 @@ from dotenv import load_dotenv
 # Configuração
 load_dotenv()
 st.set_page_config(page_title="Dados Meteorológicos", layout="wide")
-db = NeonDB()
+
+# Inicializar conexão com banco de dados
+@st.cache_resource
+def init_db():
+    try:
+        db = NeonDB()
+        return db
+    except Exception as e:
+        st.error(f"Erro ao conectar ao banco de dados: {str(e)}")
+        return None
+
+db = init_db()
 
 # Título
 st.title("🌦️ Dashboard Meteorológico - São Luiz do Paraitinga")
@@ -26,10 +37,14 @@ default_start = datetime.now() - timedelta(days=30)
 date_range = st.sidebar.date_input("Período", [default_start.date(), datetime.now().date()])
 show_raw = st.sidebar.checkbox("Mostrar dados brutos")
 show_predictions = st.sidebar.checkbox("Mostrar previsões")
+show_model_info = st.sidebar.checkbox("Mostrar informações do modelo")
 
 # Recuperar dados com cache
 @st.cache_data(ttl=3600, show_spinner="Carregando dados...")
 def load_data():
+    if db is None:
+        return pd.DataFrame()
+    
     return db.get_data("""
         SELECT 
             data, hora,
@@ -41,7 +56,10 @@ def load_data():
             vento_direcao,
             radiacao_global,
             temperatura_max,
-            temperatura_min
+            temperatura_min,
+            pressure_change,
+            temp_change_3h,
+            humidity_trend
         FROM meteo_data
         ORDER BY data DESC, hora DESC
     """)
@@ -49,12 +67,12 @@ def load_data():
 df = load_data()
 
 # Processar filtros
-if len(date_range) == 2:
+if len(date_range) == 2 and not df.empty:
     start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
     df = df[(df['data'] >= start_date.date()) & (df['data'] <= end_date.date())]
 
 # Criar coluna datetime combinada
-if 'data' in df.columns and 'hora' in df.columns:
+if not df.empty and 'data' in df.columns and 'hora' in df.columns:
     df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
     df['hour'] = df['datetime'].dt.hour
     df['weekday'] = df['datetime'].dt.dayofweek
@@ -84,16 +102,45 @@ if not df.empty:
     else:
         col4.metric("Vento", "Dados indisponíveis")
 
+# Informações do modelo
+if show_model_info:
+    st.sidebar.subheader("Informações do Modelo")
+    
+    try:
+        # Carregar importância das features
+        feature_importance = pd.read_csv("models/feature_importance.csv")
+        st.sidebar.write("**Importância das Features:**")
+        for _, row in feature_importance.head(5).iterrows():
+            st.sidebar.write(f"{row['feature']}: {row['importance']:.3f}")
+    except:
+        st.sidebar.info("Importância das features não disponível")
+    
+    try:
+        # Mostrar matriz de confusão
+        st.sidebar.image("models/confusion_matrix.png", caption="Matriz de Confusão")
+    except:
+        st.sidebar.info("Matriz de confusão não disponível")
+
 # Previsões
 if show_predictions and not df.empty:
     st.subheader("Previsão de Precipitação")
+    
     try:
-        model = joblib.load('models/precipitation_model.pkl')
+        # Tentar carregar o modelo melhorado primeiro
+        try:
+            model = joblib.load('models/precipitation_model_improved.pkl')
+            model_type = "melhorado"
+        except:
+            # Fallback para o modelo antigo
+            model = joblib.load('models/precipitation_model.pkl')
+            model_type = "original"
+        
+        st.info(f"Usando modelo {model_type}")
         
         # Usar os últimos dados disponíveis para previsão
         last_entry = df.iloc[0]
         
-        # Preparar dados para previsão
+        # Preparar dados para previsão incluindo as novas features
         prediction_data = {
             'temperatura_ar': [last_entry['temperatura_ar']],
             'umidade_relativa': [last_entry['umidade_relativa']],
@@ -102,45 +149,65 @@ if show_predictions and not df.empty:
             'temperatura_max': [last_entry['temperatura_max']],
             'temperatura_min': [last_entry['temperatura_min']],
             'hour': [last_entry['hour']],
-            'day_of_week': [last_entry['weekday']],
-            'month': [last_entry['month']]
+            'weekday': [last_entry['weekday']],
+            'month': [last_entry['month']],
+            'pressure_change': [last_entry.get('pressure_change', 0)],
+            'temp_change_3h': [last_entry.get('temp_change_3h', 0)],
+            'humidity_trend': [last_entry.get('humidity_trend', 0)]
         }
-        prediction_df = pd.DataFrame(prediction_data)
+        
+        # Remover features que não existem no modelo
+        available_features = [f for f in prediction_data.keys() if f in model.feature_names_in_]
+        filtered_prediction_data = {f: prediction_data[f] for f in available_features}
+        
+        prediction_df = pd.DataFrame(filtered_prediction_data)
         
         prediction = model.predict(prediction_df)
         
+        # Mapear classes para rótulos
+        class_labels = {
+            0: "Sem Chuva",
+            1: "Chuva Leve (até 5mm)",
+            2: "Chuva Forte (>5mm)"
+        }
+        
         col1, col2 = st.columns(2)
-        col1.metric("Previsão de Precipitação (próxima hora)", f"{prediction[0]:.1f} mm")
+        col1.metric("Previsão de Precipitação (próxima hora)", class_labels[prediction[0]])
         
         # Adicionar informações contextuais
         col2.markdown(f"**Dados usados para previsão:**")
-        col2.markdown(f"- Temperatura: {last_entry['temperatura_ar']}°C")
-        col2.markdown(f"- Umidade: {last_entry['umidade_relativa']}%")
+        col2.markdown(f"- Temperatura: {last_entry['temperatura_ar']:.1f}°C")
+        col2.markdown(f"- Umidade: {last_entry['umidade_relativa']:.1f}%")
+        col2.markdown(f"- Pressão: {last_entry['pressao_atm_estacao']:.1f} mB")
         col2.markdown(f"- Hora: {last_entry['hour']}h")
         
         # Mapa de probabilidade
-        proba = model.predict_proba(prediction_df)[0]
-        proba_df = pd.DataFrame({
-            'Probabilidade': proba,
-            'Classe': ['Sem Chuva', 'Chuva Leve', 'Chuva Forte']
-        })
-        
-        fig_proba = px.bar(
-            proba_df, 
-            x='Classe', 
-            y='Probabilidade',
-            title='Probabilidade de Precipitação',
-            text='Probabilidade',
-            color='Classe',
-            color_discrete_sequence=['green', 'orange', 'red']
-        )
-        fig_proba.update_traces(texttemplate='%{text:.0%}', textposition='outside')
-        fig_proba.update_layout(yaxis_tickformat='.0%')
-        st.plotly_chart(fig_proba, use_container_width=True)
+        try:
+            proba = model.predict_proba(prediction_df)[0]
+            proba_df = pd.DataFrame({
+                'Probabilidade': proba,
+                'Classe': [class_labels[i] for i in range(len(proba))]
+            })
+            
+            fig_proba = px.bar(
+                proba_df, 
+                x='Classe', 
+                y='Probabilidade',
+                title='Probabilidade de Precipitação',
+                text='Probabilidade',
+                color='Classe',
+                color_discrete_sequence=['green', 'orange', 'red']
+            )
+            fig_proba.update_traces(texttemplate='%{text:.0%}', textposition='outside')
+            fig_proba.update_layout(yaxis_tickformat='.0%')
+            st.plotly_chart(fig_proba, use_container_width=True)
+        except Exception as e:
+            st.info("Probabilidades não disponíveis para este modelo")
+            st.error(str(e))
         
     except Exception as e:
         st.error(f"Erro ao carregar modelo: {str(e)}")
-        st.info("Certifique-se que o arquivo do modelo está em 'models/precipitation_model.pkl'")
+        st.info("Certifique-se que o arquivo do modelo está em 'models/precipitation_model_improved.pkl'")
 
 # Tabs para diferentes visualizações
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -226,6 +293,19 @@ with tab4:
         )
         fig_pressao.update_layout(xaxis_title="Data e Hora")
         st.plotly_chart(fig_pressao, use_container_width=True)
+        
+        # Mostrar mudança de pressão se disponível
+        if 'pressure_change' in df.columns:
+            fig_pressure_change = px.line(
+                df, 
+                x='datetime', 
+                y='pressure_change', 
+                title="Mudança de Pressão",
+                labels={'pressure_change': 'Δ Pressão (mB)'},
+                color_discrete_sequence=['purple']
+            )
+            fig_pressure_change.update_layout(xaxis_title="Data e Hora")
+            st.plotly_chart(fig_pressure_change, use_container_width=True)
     else:
         st.warning("Dados de pressão indisponíveis")
 
@@ -308,6 +388,31 @@ with tab7:
             height=500
         )
         st.plotly_chart(fig_heatmap, use_container_width=True)
+        
+        # Heatmap de umidade se disponível
+        if 'umidade_relativa' in df.columns:
+            pivot_umidade = df_heatmap.pivot_table(
+                index='hour', 
+                columns='date', 
+                values='umidade_relativa', 
+                aggfunc='mean'
+            )
+            
+            fig_umidade_heatmap = go.Figure(data=go.Heatmap(
+                z=pivot_umidade.values,
+                x=pivot_umidade.columns.astype(str),
+                y=pivot_umidade.index,
+                colorscale='Blues',
+                hoverongaps=False
+            ))
+            
+            fig_umidade_heatmap.update_layout(
+                title="Variação Diária de Umidade",
+                xaxis_title="Data",
+                yaxis_title="Hora do Dia",
+                height=500
+            )
+            st.plotly_chart(fig_umidade_heatmap, use_container_width=True)
     else:
         st.warning("Dados de temperatura indisponíveis para mapa de calor")
 
@@ -343,3 +448,18 @@ if show_raw and not df.empty:
         file_name='dados_meteorologicos.csv',
         mime='text/csv'
     )
+
+# Informações adicionais
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**Sobre os dados:**
+- Fonte: Estação INMET A740 - São Luiz do Paraitinga/SP
+- Período: 2007-2025
+- Atualização: Diária via GitHub Actions
+""")
+
+# Adicionar informações de contato ou documentação
+st.sidebar.markdown("---")
+st.sidebar.markdown("[📖 Documentação](https://github.com/seu-usuario/seu-repositorio)")
+st.sidebar.markdown("[🐛 Reportar Problema](https://github.com/seu-usuario/seu-repositorio/issues)")
+
