@@ -1,0 +1,116 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+import joblib
+from pathlib import Path
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def train_precipitation_model():
+    # Carregar dados processados
+    data_path = Path("data/processed/processed_weather_data.parquet")
+    if not data_path.exists():
+        logging.error("Dados processados não encontrados")
+        return
+    
+    try:
+        df = pd.read_parquet(data_path)
+        logging.info(f"Dados carregados com {len(df)} registros")
+    except Exception as e:
+        logging.error(f"Erro ao carregar dados: {str(e)}")
+        return
+    
+    # Criar coluna datetime combinada para análise temporal
+    if 'data' in df.columns and 'hora' in df.columns:
+        df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+        df['hour'] = df['datetime'].dt.hour
+        df['weekday'] = df['datetime'].dt.dayofweek
+        df['month'] = df['datetime'].dt.month
+    
+    # Preparar dados para modelagem
+    if "precipitacao_total" not in df.columns:
+        logging.error("Dados de precipitação ausentes")
+        return
+    
+    # Criar variável alvo (próxima hora)
+    df["target"] = df["precipitacao_total"].shift(-1).fillna(0)
+    
+    # Classificar chuva em categorias
+    conditions = [
+        (df["target"] == 0),
+        (df["target"] > 0) & (df["target"] <= 2.5),
+        (df["target"] > 2.5)
+    ]
+    choices = [0, 1, 2]  # 0: Sem chuva, 1: Chuva leve, 2: Chuva forte
+    df["rain_class"] = np.select(conditions, choices, default=0)
+    
+    # Features
+    features = [
+        "temperatura_ar", "umidade_relativa", "pressao_atm_estacao",
+        "radiacao_global", "temperatura_max", "temperatura_min",
+        "hour", "weekday", "month"
+    ]
+    
+    # Filtrar apenas colunas disponíveis
+    available_features = [f for f in features if f in df.columns]
+    
+    # Filtrar dados completos
+    df = df.dropna(subset=available_features + ["rain_class"])
+    
+    if df.empty:
+        logging.error("Nenhum dado disponível para treinamento")
+        return
+    
+    X = df[available_features]
+    y = df["rain_class"]
+    
+    # Verificar se temos dados suficientes para treinamento
+    if len(X) < 100:
+        logging.error(f"Dados insuficientes para treinamento: apenas {len(X)} amostras")
+        return
+    
+    # Dividir dados
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    logging.info(f"Treinando modelo com {len(X_train)} amostras")
+    
+    # Criar e treinar modelo
+    try:
+        model = make_pipeline(
+            StandardScaler(),
+            RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                class_weight="balanced",
+                random_state=42
+            )
+        )
+        
+        model.fit(X_train, y_train)
+        logging.info("Modelo treinado com sucesso")
+        
+        # Avaliar
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        logging.info(f"Acurácia: {accuracy:.2f}")
+        logging.info("\nRelatório de Classificação:\n" + classification_report(y_test, y_pred))
+        
+        # Salvar modelo
+        model_dir = Path("models")
+        model_dir.mkdir(exist_ok=True)
+        joblib.dump(model, model_dir / "precipitation_model.pkl")
+        logging.info("Modelo salvo com sucesso")
+        
+    except Exception as e:
+        logging.error(f"Erro ao treinar modelo: {str(e)}")
+
+if __name__ == "__main__":
+    train_precipitation_model()
