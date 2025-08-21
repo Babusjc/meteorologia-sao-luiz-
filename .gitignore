@@ -3,13 +3,15 @@
 
 # Dados brutos e processados
 data/raw/*
-data/processed/*
 !data/raw/.gitkeep
+data/processed/*
 !data/processed/.gitkeep
+!data/processed/processed_weather_data.parquet
 
 # Modelos treinados
 models/*
 !models/.gitkeep
+!models/precipitation_model.pkl
 
 # Arquivos de IDE
 .idea/
