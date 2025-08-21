@@ -1,3 +1,4 @@
+# etl_local_improved.py
 import pandas as pd
 import numpy as np
 import os
@@ -122,6 +123,17 @@ def clean_and_transform():
         # Ordenar por data e hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
+        # Adicionar features de tendência para uso no modelo
+        combined_df = combined_df.sort_values(["data", "hora"])
+        combined_df["pressure_change"] = combined_df.groupby("data")["pressao_atm_estacao"].diff().fillna(0)
+        combined_df["temp_change_3h"] = combined_df.groupby("data")["temperatura_ar"].diff(3).fillna(0)
+        
+        # Calcular média móvel da umidade (6 horas)
+        combined_df = combined_df.sort_values(["data", "hora"])
+        combined_df["humidity_trend"] = combined_df.groupby("data")["umidade_relativa"].transform(
+            lambda x: x.rolling(6, min_periods=1).mean()
+        ).fillna(0)
+        
         # Salvar dados processados
         combined_df.to_parquet(processed_dir / "processed_weather_data.parquet", index=False)
         logging.info(f"Dados processados salvos com {len(combined_df)} registros")
@@ -141,5 +153,6 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
+    
 
     
