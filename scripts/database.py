@@ -1,84 +1,42 @@
-import os
-import psycopg2
+# /scripts/database.py
+
 import pandas as pd
-from dotenv import load_dotenv
+import streamlit as st
 import logging
 
-load_dotenv()
+def get_data_from_db(query: str) -> pd.DataFrame:
+    """
+    Executa uma consulta no banco de dados configurado nos Secrets do Streamlit
+    e retorna os resultados como um DataFrame do Pandas.
 
-class NeonDB:
-    def __init__(self):
-        self.conn = None
-        try:
-            self.conn = self.connect()
-            logging.info("Conexão com o banco de dados estabelecida com sucesso")
-        except Exception as e:
-            logging.error(f"Falha ao conectar ao banco de dados: {str(e)}")
-    
-    def connect(self):
-        """Estabelece conexão com o banco de dados Neon"""
-        return psycopg2.connect(os.getenv("NEON_DB_URL"))
-    
-    def get_data(self, query):
-        """Executa uma query e retorna um DataFrame"""
-        if not self.conn:
-            logging.error("Sem conexão com o banco de dados")
-            return pd.DataFrame()
-            
-        try:
-            return pd.read_sql(query, self.conn)
-        except Exception as e:
-            logging.error(f"Database error: {e}")
-            return pd.DataFrame()
-    
-    def insert_data(self, df, table_name):
-        """Insere dados de um DataFrame em uma tabela"""
-        if not self.conn:
-            logging.error("Sem conexão com o banco de dados")
-            return False
-            
-        if df.empty:
-            return False
+    Args:
+        query (str): A consulta SQL a ser executada.
+
+    Returns:
+        pd.DataFrame: Um DataFrame com os resultados da consulta.
+                      Retorna um DataFrame vazio em caso de erro.
+    """
+    try:
+        # O nome "neon_db" DEVE corresponder ao que está no seu arquivo de Secrets:
+        # [connections.neon_db]
+        conn = st.connection("neon_db", type="sql")
         
-        try:
-            with self.conn.cursor() as cur:
-                # Criar string de colunas
-                cols = ",".join([f'"{col}"' for col in df.columns])
-                
-                # Criar string de placeholders
-                placeholders = ",".join(["%s"] * len(df.columns))
-                
-                # Criar query
-                query = f"""
-                    INSERT INTO {table_name} ({cols})
-                    VALUES ({placeholders})
-                    ON CONFLICT (data, hora) DO NOTHING
-                """
-                
-                # Converter DataFrame para lista de tuplas, tratando valores None
-                data = []
-                for row in df.to_numpy():
-                    # Converter valores None para NULL do SQL
-                    processed_row = []
-                    for val in row:
-                        if pd.isna(val):
-                            processed_row.append(None)
-                        else:
-                            processed_row.append(val)
-                    data.append(tuple(processed_row))
-                
-                # Executar inserções
-                cur.executemany(query, data)
-                self.conn.commit()
-                return True
-        except Exception as e:
-            logging.error(f"Insert error: {e}")
-            if self.conn:
-                self.conn.rollback()
-            return False
-    
-    def close(self):
-        """Fecha a conexão com o banco de dados"""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        logging.info("Conexão com o banco de dados estabelecida via st.connection.")
+        
+        df = conn.query(query)
+        logging.info(f"Consulta executada com sucesso, {len(df)} linhas retornadas.")
+        
+        return df
+        
+    except Exception as e:
+        # Loga o erro para que ele apareça nos logs do Streamlit
+        logging.error(f"Falha ao conectar ou executar a consulta: {e}")
+        
+        # Mostra uma mensagem de erro amigável no aplicativo
+        st.error(f"Erro ao acessar o banco de dados: {e}")
+        
+        return pd.DataFrame()
+
+# A classe NeonDB e as outras funções foram removidas pois não são mais necessárias
+# para o dashboard. O st.connection gerencia a conexão de forma mais eficiente.
+
