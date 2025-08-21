@@ -10,6 +10,20 @@ from pathlib import Path
 import calendar
 from scripts.database import NeonDB
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+# Adiciona o diretório raiz do projeto ao sys.path
+# Isso permite que o script encontre a pasta 'scripts'
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# Agora as outras importações devem funcionar
+from scripts.database import NeonDB
+import pandas as pd
+# ... resto das suas importações
+
+
 
 # Configuração
 load_dotenv()
