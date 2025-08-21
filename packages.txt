@@ -1,3 +1,2 @@
+build-essential
 libpq-dev
-cmake
-libarrow-dev
