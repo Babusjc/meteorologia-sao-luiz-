@@ -86,10 +86,13 @@ df = load_data()
 # Processar filtros
 if len(date_range) == 2 and not df.empty:
     start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-    df = df[(df["data"] >= start_date.date()) & (df["data"] <= end_date.date())]
+    # Assegura que a coluna 'data' é do tipo datetime para comparação
+    df['data'] = pd.to_datetime(df['data'])
+    df = df[(df["data"].dt.date >= start_date.date()) & (df["data"].dt.date <= end_date.date())]
 
 # Criar coluna datetime combinada
 if not df.empty and "data" in df.columns and "hora" in df.columns:
+    # Converte a coluna 'hora' para string para garantir a concatenação
     df["datetime"] = pd.to_datetime(df["data"].astype(str) + " " + df["hora"].astype(str))
     df["hour"] = df["datetime"].dt.hour
     df["weekday"] = df["datetime"].dt.dayofweek
@@ -100,22 +103,26 @@ if not df.empty:
     col1, col2, col3, col4 = st.columns(4)
     
     if "temperatura_ar" in df.columns:
-        col1.metric("Temperatura Média", f"{df["temperatura_ar"].mean():.1f}°C")
+        # CORREÇÃO: Envolve a expressão do DataFrame em parênteses para evitar SyntaxError
+        col1.metric("Temperatura Média", f'{(df["temperatura_ar"].mean()):.1f}°C')
     else:
         col1.metric("Temperatura", "Dados indisponíveis")
     
     if "umidade_relativa" in df.columns:
-        col2.metric("Umidade Relativa", f"{df["umidade_relativa"].mean():.1f}%")
+        # CORREÇÃO: Envolve a expressão do DataFrame em parênteses
+        col2.metric("Umidade Relativa", f'{(df["umidade_relativa"].mean()):.1f}%')
     else:
         col2.metric("Umidade", "Dados indisponíveis")
     
     if "precipitacao_total" in df.columns:
-        col3.metric("Precipitação Total", f"{df["precipitacao_total"].sum():.1f} mm")
+        # CORREÇÃO: Envolve a expressão do DataFrame em parênteses
+        col3.metric("Precipitação Total", f'{(df["precipitacao_total"].sum()):.1f} mm')
     else:
         col3.metric("Precipitação", "Dados indisponíveis")
     
     if "vento_velocidade" in df.columns:
-        col4.metric("Velocidade do Vento", f"{df["vento_velocidade"].mean():.1f} m/s")
+        # CORREÇÃO: Envolve a expressão do DataFrame em parênteses
+        col4.metric("Velocidade do Vento", f'{(df["vento_velocidade"].mean()):.1f} m/s')
     else:
         col4.metric("Vento", "Dados indisponíveis")
 
@@ -128,7 +135,7 @@ if show_model_info:
         feature_importance = pd.read_csv("models/feature_importance.csv")
         st.sidebar.write("**Importância das Features:**")
         for _, row in feature_importance.head(5).iterrows():
-            st.sidebar.write(f"{row["feature"]}: {row["importance"]:.3f}")
+            st.sidebar.write(f"{row['feature']}: {row['importance']:.3f}")
     except:
         st.sidebar.info("Importância das features não disponível")
     
@@ -193,10 +200,11 @@ if show_predictions and not df.empty:
         
         # Adicionar informações contextuais
         col2.markdown(f"**Dados usados para previsão:**")
-        col2.markdown(f"- Temperatura: {last_entry["temperatura_ar"]:.1f}°C")
-        col2.markdown(f"- Umidade: {last_entry["umidade_relativa"]:.1f}%")
-        col2.markdown(f"- Pressão: {last_entry["pressao_atm_estacao"]:.1f} mB")
-        col2.markdown(f"- Hora: {last_entry["hour"]}h")
+        # CORREÇÃO: Envolve as expressões do DataFrame em parênteses
+        col2.markdown(f"- Temperatura: {(last_entry['temperatura_ar']):.1f}°C")
+        col2.markdown(f"- Umidade: {(last_entry['umidade_relativa']):.1f}%")
+        col2.markdown(f"- Pressão: {(last_entry['pressao_atm_estacao']):.1f} mB")
+        col2.markdown(f"- Hora: {last_entry['hour']}h")
         
         # Mapa de probabilidade
         try:
@@ -215,8 +223,9 @@ if show_predictions and not df.empty:
                 color="Classe",
                 color_discrete_sequence=["green", "orange", "red"]
             )
-            fig_proba.update_traces(texttemplate=\\'%{text:.0%}\\', textposition=\\'outside\\")
-            fig_proba.update_layout(yaxis_tickformat=\\''.0%\\")
+            # CORREÇÃO: Corrigido o template de texto e o formato do eixo Y
+            fig_proba.update_traces(texttemplate='%{text:.0%}', textposition='outside')
+            fig_proba.update_layout(yaxis_tickformat='.0%')
             st.plotly_chart(fig_proba, use_container_width=True)
         except Exception as e:
             st.info("Probabilidades não disponíveis para este modelo")
@@ -224,7 +233,7 @@ if show_predictions and not df.empty:
         
     except Exception as e:
         st.error(f"Erro ao carregar modelo: {str(e)}")
-        st.info("Certifique-se que o arquivo do modelo está em \\'models/precipitation_model_improved.pkl\'")
+        st.info("Certifique-se que o arquivo do modelo está em 'models/precipitation_model_improved.pkl'")
 
 # Tabs para diferentes visualizações
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -395,5 +404,23 @@ with tab7:
             x=pivot_table.columns.astype(str),
             y=pivot_table.index,
             colorscale="Viridis",
-      
-(Content truncated due to size limit. Use page ranges or line ranges to read remaining content)
+            colorbar_title="Temp (°C)"
+        ))
+        
+        fig_heatmap.update_layout(
+            title="Mapa de Calor da Temperatura (Hora vs. Dia)",
+            xaxis_title="Data",
+            yaxis_title="Hora do Dia"
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+    else:
+        st.warning("Dados de temperatura indisponíveis para o mapa de calor")
+
+# Mostrar dados brutos
+if show_raw and not df.empty:
+    st.subheader("Dados Brutos")
+    st.dataframe(df)
+elif show_raw:
+    st.info("Não há dados para exibir no período selecionado.")
+
+
