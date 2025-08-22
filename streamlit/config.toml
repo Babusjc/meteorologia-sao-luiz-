@@ -1,5 +1,5 @@
-[server]
-headless = true
+# .streamlit/config.toml
 
-[runner]
-pythonVersion = "3.11"
+[server]
+folderWatchBlacklist = ["models"]
+
