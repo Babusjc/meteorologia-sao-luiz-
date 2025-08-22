@@ -1,4 +1,3 @@
-# etl_local_improved.py
 import pandas as pd
 import numpy as np
 import os
@@ -7,25 +6,26 @@ import sys
 from dotenv import load_dotenv
 import logging
 
-# Adicionar o diretório pai ao path
+# Adicionar o diretório pai ao path para importar módulos
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-# Agora importar o módulo
-from scripts.database import NeonDB
+# Importar a nova classe ETLDB para uso em scripts fora do Streamlit
+from scripts.database import ETLDB
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def clean_and_transform():
-    # Carregar variáveis de ambiente
+    # Carregar variáveis de ambiente (para NEON_DB_URL)
     load_dotenv()
     
+    db = None # Inicializa db como None
     try:
-        # Conectar ao banco de dados
-        db = NeonDB()
-        logging.info("Conexão com o banco de dados estabelecida com sucesso")
+        # Conectar ao banco de dados usando a classe ETLDB
+        db = ETLDB()
+        logging.info("Conexão com o banco de dados estabelecida com sucesso para ETL")
     except Exception as e:
-        logging.error(f"Falha ao conectar ao banco de dados: {str(e)}")
+        logging.error(f"Falha ao conectar ao banco de dados para ETL: {str(e)}")
         return
 
     # Configurar caminhos
@@ -38,6 +38,7 @@ def clean_and_transform():
     
     if not csv_files:
         logging.warning("Nenhum arquivo CSV encontrado para processamento")
+        if db: db.close()
         return
     
     # Processar cada arquivo
@@ -74,14 +75,14 @@ def clean_and_transform():
             
             df = df.rename(columns=column_mapping)
             
-            # Manter apenas colunas relevantes
+            # Manter apenas colunas relevantes para o banco de dados
             relevant_cols = [
                 "data", "hora", "precipitacao_total", "pressao_atm_estacao",
                 "temperatura_ar", "umidade_relativa", "vento_velocidade",
                 "vento_direcao", "radiacao_global", "temperatura_max", "temperatura_min"
             ]
             
-            # Filtrar colunas existentes
+            # Filtrar colunas existentes no DataFrame atual
             available_cols = [col for col in relevant_cols if col in df.columns]
             df = df[available_cols]
             
@@ -123,25 +124,24 @@ def clean_and_transform():
         # Ordenar por data e hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
-        # Adicionar features de tendência para uso no modelo
-        combined_df = combined_df.sort_values(["data", "hora"])
+        # Adicionar features de tendência para uso no modelo (estas não são salvas no banco)
         combined_df["pressure_change"] = combined_df.groupby("data")["pressao_atm_estacao"].diff().fillna(0)
         combined_df["temp_change_3h"] = combined_df.groupby("data")["temperatura_ar"].diff(3).fillna(0)
         
         # Calcular média móvel da umidade (6 horas)
-        combined_df = combined_df.sort_values(["data", "hora"])
         combined_df["humidity_trend"] = combined_df.groupby("data")["umidade_relativa"].transform(
             lambda x: x.rolling(6, min_periods=1).mean()
         ).fillna(0)
         
-        # Salvar dados processados
+        # Salvar dados processados (para o modelo de ML)
         combined_df.to_parquet(processed_dir / "processed_weather_data.parquet", index=False)
         logging.info(f"Dados processados salvos com {len(combined_df)} registros")
         
-        # Inserir no banco de dados
+        # Inserir no banco de dados (apenas colunas que existem no banco)
         try:
-            # Inserir dados
-            success = db.insert_data(combined_df, "meteo_data")
+            # Filtrar o DataFrame para incluir apenas as colunas que serão inseridas no banco
+            df_to_insert_db = combined_df[relevant_cols].copy()
+            success = db.insert_data(df_to_insert_db, "meteo_data")
             if success:
                 logging.info("Dados inseridos no banco com sucesso")
             else:
@@ -150,9 +150,13 @@ def clean_and_transform():
             logging.error(f"Erro ao inserir dados no banco: {str(e)}")
     else:
         logging.warning("Nenhum dado processado")
+    
+    if db: db.close()
 
 if __name__ == "__main__":
     clean_and_transform()
-    
+
+
+
 
     
