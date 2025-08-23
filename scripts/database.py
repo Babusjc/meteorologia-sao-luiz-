@@ -109,7 +109,15 @@ class ETLDB:
             # aceita strings HH:MM ou datetime.time
             df_to_insert["hora"] = pd.to_datetime(df_to_insert["hora"], errors="coerce").dt.time
 
+        # CORREÇÃO: Substituir todos os valores NaT/NaN por None
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
+
+        # CORREÇÃO: Garantir que não há valores NaT/NaN nas colunas de data/hora
+        for col in ["data", "hora"]:
+            if col in df_to_insert.columns:
+                df_to_insert[col] = df_to_insert[col].apply(
+                    lambda x: None if pd.isna(x) or x is pd.NaT else x
+                )
 
         cols_sql = ", ".join(expected_cols)
         placeholders = ", ".join(["%s"] * len(expected_cols))
@@ -173,5 +181,3 @@ class ETLDB:
             logging.info("Conexão com o banco de dados para ETL fechada.")
         except Exception:
             pass
-
-
