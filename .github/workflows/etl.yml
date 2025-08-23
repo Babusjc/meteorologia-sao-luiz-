@@ -32,7 +32,7 @@ jobs:
     - name: Download data
       run: |
         mkdir -p data/raw
-        python scripts/download_data.py
+        python scripts/download_data.py --force
 
     - name: Create train_model.py if not exists
       run: |
