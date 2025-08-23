@@ -112,12 +112,13 @@ class ETLDB:
         # CORREÇÃO: Substituir todos os valores NaT/NaN por None
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
 
-        # CORREÇÃO: Garantir que não há valores NaT/NaN nas colunas de data/hora
-        for col in ["data", "hora"]:
-            if col in df_to_insert.columns:
-                df_to_insert[col] = df_to_insert[col].apply(
-                    lambda x: None if pd.isna(x) or x is pd.NaT else x
-                )
+        # CORREÇÃO CRÍTICA: Remover linhas com data ou hora nulos
+        df_to_insert = df_to_insert.dropna(subset=['data', 'hora'])
+
+        # Se não houver dados após a limpeza, retornar
+        if df_to_insert.empty:
+            logging.warning("Nenhum dado válido para inserção após limpeza de nulos.")
+            return True
 
         cols_sql = ", ".join(expected_cols)
         placeholders = ", ".join(["%s"] * len(expected_cols))
