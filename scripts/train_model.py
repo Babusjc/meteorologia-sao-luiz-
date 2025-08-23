@@ -1,10 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, f1_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import make_pipeline as make_imb_pipeline
@@ -31,9 +30,10 @@ def train_precipitation_model():
         logging.error(f"Erro ao carregar dados: {str(e)}")
         return
     
-    # Criar coluna datetime combinada para análise temporal
+    # Ordenar por data/hora para evitar vazamento temporal
     if 'data' in df.columns and 'hora' in df.columns:
         df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
+        df = df.sort_values('datetime').reset_index(drop=True)
         df['hour'] = df['datetime'].dt.hour
         df['weekday'] = df['datetime'].dt.dayofweek
         df['month'] = df['datetime'].dt.month
@@ -43,8 +43,8 @@ def train_precipitation_model():
         logging.error("Dados de precipitação ausentes")
         return
     
-    # Criar variável alvo (próxima hora)
-    df["target"] = df["precipitacao_total"].shift(-1).fillna(0)
+    # Criar variável alvo (próxima hora) com groupby para evitar vazamento entre dias
+    df["target"] = df.groupby('data')["precipitacao_total"].shift(-1).fillna(0)
     
     # Classificar chuva em categorias com thresholds ajustados
     conditions = [
@@ -98,11 +98,9 @@ def train_precipitation_model():
     
     logging.info(f"Treinando modelo com {len(X_train)} amostras")
     
-    # Estratégia de balanceamento
-    # Oversample das classes minoritárias
-    oversample = SMOTE(sampling_strategy={1: 2000, 2: 1000}, random_state=42)
-    # Undersample da classe majoritária
-    undersample = RandomUnderSampler(sampling_strategy={0: 10000}, random_state=42)
+    # Estratégia de balanceamento corrigida
+    oversample = SMOTE(sampling_strategy='auto', random_state=42)
+    undersample = RandomUnderSampler(sampling_strategy='auto', random_state=42)
     
     # Criar e treinar modelo com balanceamento
     try:
