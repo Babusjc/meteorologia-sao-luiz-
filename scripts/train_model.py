@@ -1,17 +1,21 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, f1_score
-from sklearn.preprocessing import StandardScaler
-from imblearn.over_sampling import SMOTE
-from imblearn.under_sampling import RandomUnderSampler
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, TimeSeriesSplit
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, f1_score, roc_auc_score
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.compose import ColumnTransformer
+from imblearn.over_sampling import SMOTE, ADASYN
+from imblearn.under_sampling import RandomUnderSampler, TomekLinks
 from imblearn.pipeline import make_pipeline as make_imb_pipeline
+from imblearn.ensemble import BalancedRandomForestClassifier
 import joblib
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,6 +41,7 @@ def train_precipitation_model():
         df['hour'] = df['datetime'].dt.hour
         df['weekday'] = df['datetime'].dt.dayofweek
         df['month'] = df['datetime'].dt.month
+        df['season'] = (df['month'] % 12 + 3) // 3  # 1:Inverno, 2:Primavera, 3:Verão, 4:Outono
     
     # Preparar dados para modelagem
     if "precipitacao_total" not in df.columns:
@@ -49,25 +54,39 @@ def train_precipitation_model():
     # Classificar chuva em categorias com thresholds ajustados
     conditions = [
         (df["target"] == 0),
-        (df["target"] > 0) & (df["target"] <= 5.0),  # Aumentado para 5mm
-        (df["target"] > 5.0)
+        (df["target"] > 0) & (df["target"] <= 2.5),  # Chuva leve
+        (df["target"] > 2.5)  # Chuva forte
     ]
-    choices = [0, 1, 2]  # 0: Sem chuva, 1: Chuva leve, 2: Chuva forte
+    choices = [0, 1, 2]
     df["rain_class"] = np.select(conditions, choices, default=0)
     
-    # Features
+    # Features básicas
     features = [
         "temperatura_ar", "umidade_relativa", "pressao_atm_estacao",
         "radiacao_global", "temperatura_max", "temperatura_min",
-        "hour", "weekday", "month"
+        "hour", "weekday", "month", "season"
     ]
     
-    # Adicionar features de tendência
-    df["pressure_change"] = df["pressao_atm_estacao"].diff().fillna(0)
-    df["temp_change_3h"] = df["temperatura_ar"].diff(3).fillna(0)
-    df["humidity_trend"] = df["umidade_relativa"].rolling(6, min_periods=1).mean().fillna(0)
+    # Adicionar features de tendência e interações
+    df["pressure_change_1h"] = df.groupby("data")["pressao_atm_estacao"].diff().fillna(0)
+    df["pressure_change_3h"] = df.groupby("data")["pressao_atm_estacao"].diff(3).fillna(0)
+    df["temp_change_1h"] = df.groupby("data")["temperatura_ar"].diff().fillna(0)
+    df["temp_change_3h"] = df.groupby("data")["temperatura_ar"].diff(3).fillna(0)
+    df["humidity_change_1h"] = df.groupby("data")["umidade_relativa"].diff().fillna(0)
+    df["humidity_trend_6h"] = df.groupby("data")["umidade_relativa"].rolling(6, min_periods=1).mean().fillna(0)
     
-    features.extend(["pressure_change", "temp_change_3h", "humidity_trend"])
+    # Features de interação
+    df["temp_humidity_interaction"] = df["temperatura_ar"] * df["umidade_relativa"]
+    df["pressure_temp_interaction"] = df["pressao_atm_estacao"] * df["temperatura_ar"]
+    
+    # Adicionar todas as novas features à lista
+    new_features = [
+        "pressure_change_1h", "pressure_change_3h", "temp_change_1h", "temp_change_3h",
+        "humidity_change_1h", "humidity_trend_6h", "temp_humidity_interaction", 
+        "pressure_temp_interaction"
+    ]
+    
+    features.extend(new_features)
     
     # Filtrar apenas colunas disponíveis
     available_features = [f for f in features if f in df.columns]
@@ -91,81 +110,136 @@ def train_precipitation_model():
         logging.error(f"Dados insuficientes para treinamento: apenas {len(X)} amostras")
         return
     
-    # Dividir dados
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # Dividir dados com validação temporal
+    tscv = TimeSeriesSplit(n_splits=5)
     
-    logging.info(f"Treinando modelo com {len(X_train)} amostras")
-    
-    # Estratégia de balanceamento corrigida
-    oversample = SMOTE(sampling_strategy='auto', random_state=42)
-    undersample = RandomUnderSampler(sampling_strategy='auto', random_state=42)
-    
-    # Criar e treinar modelo com balanceamento
-    try:
-        # Pipeline com balanceamento e classificação
-        model = make_imb_pipeline(
-            undersample,
-            oversample,
-            StandardScaler(),
-            RandomForestClassifier(
-                n_estimators=100,
-                max_depth=15,
-                class_weight="balanced",
-                random_state=42,
-                n_jobs=-1  # Usar todos os cores disponíveis
-            )
+    # Configurar modelos e pipelines para testar
+    models = {
+        'BalancedRandomForest': BalancedRandomForestClassifier(
+            n_estimators=100, 
+            max_depth=15, 
+            random_state=42,
+            sampling_strategy='auto',
+            n_jobs=-1
+        ),
+        'RandomForest': RandomForestClassifier(
+            n_estimators=100,
+            max_depth=15,
+            class_weight='balanced',
+            random_state=42,
+            n_jobs=-1
+        ),
+        'GradientBoosting': GradientBoostingClassifier(
+            n_estimators=100,
+            max_depth=5,
+            random_state=42
         )
+    }
+    
+    best_score = 0
+    best_model = None
+    best_model_name = ""
+    
+    for name, model in models.items():
+        logging.info(f"Testando modelo: {name}")
         
-        # Treinar modelo
-        model.fit(X_train, y_train)
-        logging.info("Modelo treinado com sucesso")
-        
-        # Fazer previsões
-        y_pred = model.predict(X_test)
-        
-        # Avaliar
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted')
-        
-        logging.info(f"Acurácia: {accuracy:.3f}")
-        logging.info(f"F1-Score (weighted): {f1:.3f}")
-        logging.info("\nRelatório de Classificação:\n" + classification_report(y_test, y_pred))
-        
-        # Matriz de confusão
-        cm = confusion_matrix(y_test, y_pred)
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                   xticklabels=['Sem Chuva', 'Chuva Leve', 'Chuva Forte'],
-                   yticklabels=['Sem Chuva', 'Chuva Leve', 'Chuva Forte'])
-        plt.ylabel('Verdadeiro')
-        plt.xlabel('Previsto')
-        plt.title('Matriz de Confusão')
-        
-        # Salvar matriz de confusão
-        model_dir = Path("models")
-        model_dir.mkdir(exist_ok=True)
-        plt.savefig(model_dir / "confusion_matrix.png")
-        plt.close()
-        
-        # Salvar modelo
-        joblib.dump(model, model_dir / "precipitation_model_improved.pkl")
-        logging.info("Modelo melhorado salvo com sucesso")
-        
-        # Salvar também informações sobre as features
+        # Avaliar com validação cruzada temporal
+        try:
+            cv_scores = cross_val_score(
+                model, X, y, 
+                cv=tscv, 
+                scoring='f1_weighted',
+                n_jobs=-1
+            )
+            mean_score = cv_scores.mean()
+            logging.info(f"F1-Score médio ({name}): {mean_score:.3f}")
+            
+            if mean_score > best_score:
+                best_score = mean_score
+                best_model = model
+                best_model_name = name
+        except Exception as e:
+            logging.error(f"Erro ao avaliar {name}: {str(e)}")
+    
+    if best_model is None:
+        logging.error("Nenhum modelo pôde ser avaliado")
+        return
+    
+    logging.info(f"Melhor modelo: {best_model_name} com F1-Score: {best_score:.3f}")
+    
+    # Treinar o melhor modelo em todos os dados
+    best_model.fit(X, y)
+    logging.info("Melhor modelo treinado com sucesso")
+    
+    # Fazer previsões em todo o conjunto para avaliação
+    y_pred = best_model.predict(X)
+    
+    # Avaliar
+    accuracy = accuracy_score(y, y_pred)
+    f1 = f1_score(y, y_pred, average='weighted')
+    
+    logging.info(f"Acurácia: {accuracy:.3f}")
+    logging.info(f"F1-Score (weighted): {f1:.3f}")
+    logging.info("\nRelatório de Classificação:\n" + classification_report(y, y_pred))
+    
+    # Matriz de confusão
+    cm = confusion_matrix(y, y_pred)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+               xticklabels=['Sem Chuva', 'Chuva Leve', 'Chuva Forte'],
+               yticklabels=['Sem Chuva', 'Chuva Leve', 'Chuva Forte'])
+    plt.ylabel('Verdadeiro')
+    plt.xlabel('Previsto')
+    plt.title('Matriz de Confusão')
+    
+    # Salvar matriz de confusão
+    model_dir = Path("models")
+    model_dir.mkdir(exist_ok=True)
+    plt.savefig(model_dir / "confusion_matrix.png", dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Salvar modelo
+    joblib.dump(best_model, model_dir / "precipitation_model_improved.pkl")
+    logging.info("Modelo melhorado salvo com sucesso")
+    
+    # Salvar também informações sobre as features
+    if hasattr(best_model, 'feature_importances_'):
         feature_importance = pd.DataFrame({
             'feature': available_features,
-            'importance': model.steps[-1][-1].feature_importances_
+            'importance': best_model.feature_importances_
         }).sort_values('importance', ascending=False)
         
         feature_importance.to_csv(model_dir / "feature_importance.csv", index=False)
         logging.info("Importância das features salva")
         
-    except Exception as e:
-        logging.error(f"Erro ao treinar modelo: {str(e)}")
-        import traceback
-        logging.error(traceback.format_exc())
+        # Plotar importância das features
+        plt.figure(figsize=(12, 8))
+        sns.barplot(x='importance', y='feature', data=feature_importance.head(15))
+        plt.title('Top 15 Features por Importância')
+        plt.tight_layout()
+        plt.savefig(model_dir / "feature_importance_plot.png", dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    # Testar técnicas de balanceamento para melhorar ainda mais
+    logging.info("Testando técnicas de balanceamento...")
+    
+    # SMOTE + Tomek Links
+    smote_tomek = make_imb_pipeline(
+        SMOTE(sampling_strategy={1: 5000, 2: 1000}, random_state=42),
+        TomekLinks(),
+        best_model
+    )
+    
+    smote_tomek.fit(X, y)
+    y_pred_balanced = smote_tomek.predict(X)
+    
+    f1_balanced = f1_score(y, y_pred_balanced, average='weighted')
+    logging.info(f"F1-Score com SMOTE+Tomek: {f1_balanced:.3f}")
+    
+    # Salvar o melhor modelo balanceado se for melhor
+    if f1_balanced > f1:
+        joblib.dump(smote_tomek, model_dir / "precipitation_model_balanced.pkl")
+        logging.info("Modelo balanceado salvo com sucesso")
 
 if __name__ == "__main__":
     train_precipitation_model()
