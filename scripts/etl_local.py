@@ -93,8 +93,6 @@ def clean_and_transform():
             if 'hora' in df.columns:
                 # Converter hora para formato time, tratando valores inválidos
                 df['hora'] = pd.to_datetime(df['hora'], format='%H:%M', errors='coerce').dt.time
-                # Remover linhas com hora inválida
-                df = df.dropna(subset=['hora'])
             
             # Converter colunas numéricas
             numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
@@ -107,6 +105,9 @@ def clean_and_transform():
             
             # Remover linhas com dados essenciais faltantes
             df = df.dropna(subset=['data', 'hora'])
+            
+            # Substituir NaT por None para evitar problemas no banco de dados
+            df = df.replace({pd.NaT: None})
             
             dfs.append(df)
             logging.info(f"Processado {file.name} com sucesso")
@@ -141,6 +142,10 @@ def clean_and_transform():
         try:
             # Filtrar o DataFrame para incluir apenas as colunas que serão inseridas no banco
             df_to_insert_db = combined_df[relevant_cols].copy()
+            
+            # Garantir que não há valores NaT/NaN antes da inserção
+            df_to_insert_db = df_to_insert_db.replace({pd.NaT: None, np.nan: None})
+            
             success = db.insert_data(df_to_insert_db, "meteo_data")
             if success:
                 logging.info("Dados inseridos no banco com sucesso")
@@ -155,7 +160,6 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
-
 
 
 
