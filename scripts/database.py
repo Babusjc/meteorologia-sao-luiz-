@@ -115,9 +115,12 @@ class ETLDB:
         placeholders = ", ".join(["%s"] * len(expected_cols))
         update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])  # pula PK
 
+        # CORREÇÃO: Usar template correto para execute_values
+        template = f"({placeholders})"
+        
         upsert_sql = f"""
             INSERT INTO {table} ({cols_sql})
-            VALUES ({placeholders})
+            VALUES %s
             ON CONFLICT (data, hora)
             DO UPDATE SET {update_assignments};
         """
@@ -125,7 +128,14 @@ class ETLDB:
         values = [tuple(row[c] for c in expected_cols) for _, row in df_to_insert.iterrows()]
 
         try:
-            pg_extras.execute_values(self.cursor, upsert_sql.replace("VALUES (%s)", "VALUES %s"), values)
+            # CORREÇÃO: Usar execute_values com template explícito
+            pg_extras.execute_values(
+                self.cursor, 
+                upsert_sql, 
+                values, 
+                template=template,
+                page_size=1000
+            )
             self.conn.commit()
             logging.info(f"Upsert concluído com {len(values)} linhas em {table}.")
             return True
@@ -163,6 +173,5 @@ class ETLDB:
             logging.info("Conexão com o banco de dados para ETL fechada.")
         except Exception:
             pass
-
 
 
