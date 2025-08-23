@@ -8,10 +8,13 @@ data/processed/*
 !data/processed/.gitkeep
 !data/processed/processed_weather_data.parquet
 
-# Modelos treinados
+# Modelos treinados - permitir versionar os arquivos específicos
 models/*
 !models/.gitkeep
 !models/precipitation_model.pkl
+!models/precipitation_model_improved.pkl
+!models/feature_importance.csv
+!models/confusion_matrix.png
 
 # Arquivos de IDE
 .idea/
