@@ -29,10 +29,19 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Download data
+    - name: Download data (FORÇADO)
       run: |
         mkdir -p data/raw
+        echo "Forçando download de todos os arquivos..."
         python scripts/download_data.py --force
+
+    - name: Verificar arquivos baixados
+      run: |
+        echo "Arquivos na pasta data/raw:"
+        ls -la data/raw/
+        echo ""
+        echo "Tamanho dos arquivos:"
+        du -h data/raw/*.csv | head -10
 
     - name: Create train_model.py if not exists
       run: |
@@ -165,14 +174,17 @@ jobs:
         mkdir -p data/processed
         mkdir -p models
         
-        # Executar ETL
+        echo "Executando ETL..."
         python scripts/etl_local.py
         
-        # Treinar modelo (se houver dados)
+        # Verificar se o ETL criou os dados processados
         if [ -f "data/processed/processed_weather_data.parquet" ]; then
+          echo "Treinando modelo com dados processados..."
           python scripts/train_model.py
         else
-          echo "Nenhum dado processado disponível para treinamento"
+          echo "AVISO: Nenhum dado processado disponível para treinamento"
+          echo "Verificando se há arquivos CSV na pasta raw:"
+          ls -la data/raw/
         fi
 
     - name: Commit processed data
@@ -184,5 +196,5 @@ jobs:
         git add data/processed/*
         git add models/*
         git add scripts/train_model.py  # Adicionar o script se foi criado
-        git commit -m "Update processed data and models" || echo "No changes to commit"
+        git commit -m "Update processed data and models [$(date +%Y-%m-%d)]" || echo "No changes to commit"
         git push origin main
