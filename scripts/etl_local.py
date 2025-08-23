@@ -122,6 +122,9 @@ def clean_and_transform():
         # Remover duplicatas
         combined_df = combined_df.drop_duplicates(subset=["data", "hora"], keep="last")
         
+        # VERIFICAÇÃO CRÍTICA: Remover quaisquer linhas com valores nulos em data ou hora
+        combined_df = combined_df.dropna(subset=['data', 'hora'])
+        
         # Ordenar por data e hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
@@ -146,6 +149,9 @@ def clean_and_transform():
             # Garantir que não há valores NaT/NaN antes da inserção
             df_to_insert_db = df_to_insert_db.replace({pd.NaT: None, np.nan: None})
             
+            # VERIFICAÇÃO FINAL: Remover quaisquer linhas com valores nulos nas colunas críticas
+            df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
+            
             success = db.insert_data(df_to_insert_db, "meteo_data")
             if success:
                 logging.info("Dados inseridos no banco com sucesso")
@@ -160,7 +166,3 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
-
-
-
-    
