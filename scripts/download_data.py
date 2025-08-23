@@ -1,6 +1,7 @@
 import gdown
 import os
 import requests
+import argparse
 from urllib.parse import urlparse, parse_qs
 
 # Mapeamento direto dos IDs dos arquivos
@@ -26,14 +27,14 @@ FILE_MAPPING = {
     "INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2025.csv": "11VB3rdtq35SDW0tng8E_sgyXhCcfR4MM"
 }
 
-def download_from_drive():
+def download_from_drive(force=False):
     os.makedirs("data/raw", exist_ok=True)
     
     for filename, file_id in FILE_MAPPING.items():
         output_path = os.path.join("data/raw", filename)
         
-        # Se o arquivo já existe, pular
-        if os.path.exists(output_path):
+        # Se o arquivo já existe e não foi forçado, pular
+        if os.path.exists(output_path) and not force:
             print(f"Skipping existing file: {filename}")
             continue
             
@@ -57,4 +58,9 @@ def download_from_drive():
             print(f"Failed to download {filename}: {str(e)}")
 
 if __name__ == "__main__":
-    download_from_drive()
+    parser = argparse.ArgumentParser(description='Download de dados meteorológicos do Google Drive')
+    parser.add_argument('--force', action='store_true', 
+                       help='Forçar download mesmo se arquivo já existir localmente')
+    args = parser.parse_args()
+    
+    download_from_drive(force=args.force)
