@@ -13,8 +13,10 @@ models/*
 !models/.gitkeep
 !models/precipitation_model.pkl
 !models/precipitation_model_improved.pkl
+!models/precipitation_model_balanced.pkl
 !models/feature_importance.csv
 !models/confusion_matrix.png
+!models/feature_importance_plot.png
 
 # Arquivos de IDE
 .idea/
