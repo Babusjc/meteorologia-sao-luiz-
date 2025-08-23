@@ -1,4 +1,3 @@
-import gdown
 import os
 import requests
 import argparse
@@ -35,16 +34,19 @@ def download_from_drive(force=False):
         
         # Se o arquivo já existe e não foi forçado, pular
         if os.path.exists(output_path) and not force:
-            print(f"Skipping existing file: {filename}")
+            print(f"Pulando arquivo existente: {filename}")
             continue
             
         # URL de download com confirmação
         url = f"https://drive.google.com/uc?id={file_id}&export=download&confirm=t"
         
         try:
+            print(f"Iniciando download de: {filename}")
+            
             # Usar requests para baixar o arquivo
             session = requests.Session()
             response = session.get(url, stream=True)
+            response.raise_for_status()  # Levanta exceção para erros HTTP
             
             # Salvar o arquivo
             with open(output_path, 'wb') as f:
@@ -52,10 +54,16 @@ def download_from_drive(force=False):
                     if chunk:
                         f.write(chunk)
             
-            print(f"Downloaded: {filename}")
+            print(f"Download concluído: {filename}")
+            
+            # Verificar se o arquivo foi realmente baixado
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                print(f"Arquivo {filename} salvo com sucesso ({os.path.getsize(output_path)} bytes)")
+            else:
+                print(f"AVISO: Arquivo {filename} pode não ter sido salvo corretamente")
             
         except Exception as e:
-            print(f"Failed to download {filename}: {str(e)}")
+            print(f"Falha no download de {filename}: {str(e)}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Download de dados meteorológicos do Google Drive')
@@ -63,4 +71,6 @@ if __name__ == "__main__":
                        help='Forçar download mesmo se arquivo já existir localmente')
     args = parser.parse_args()
     
+    print(f"Iniciando download com force={args.force}")
     download_from_drive(force=args.force)
+    print("Processo de download concluído")
