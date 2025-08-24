@@ -73,7 +73,6 @@ jobs:
         if [ ! -f "scripts/train_model.py" ]; then
           echo "Criando scripts/train_model.py..."
           cat > scripts/train_model.py << 'EOF'
-          
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
