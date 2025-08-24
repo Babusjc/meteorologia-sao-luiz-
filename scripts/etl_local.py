@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from dotenv import load_dotenv
 import logging
+from collections import Counter
 
 # Adicionar o diretório pai ao path para importar módulos
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -62,6 +63,16 @@ def clean_and_transform():
                             on_bad_lines="skip",
                             na_values=["", " ", "null", "NaN", "null", "NULL"]
                         )
+                        
+                        # Verificar se o DataFrame não está vazio
+                        if len(df) == 0:
+                            logging.warning(f"Arquivo {file.name} está vazio")
+                            continue
+                            
+                        # Verificar se há colunas suficientes
+                        if len(df.columns) < 2:
+                            logging.warning(f"Arquivo {file.name} não tem colunas suficientes: {len(df.columns)}")
+                            continue
                         
                         # Se chegou aqui sem erro, a leitura foi bem-sucedida
                         logging.info(f"Arquivo {file.name} lido com sucesso usando encoding={encoding}, separator='{separator}'")
@@ -218,21 +229,38 @@ def clean_and_transform():
             initial_db_count = len(df_to_insert_db)
             df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
             
-            # Preencher nulos em colunas numéricas com a média
+            # MODIFICAÇÃO: Tratamento mais robusto de valores nulos
+            # Para colunas numéricas, usar mediana (menos sensível a outliers)
             numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
                            'umidade_relativa', 'vento_velocidade', 'radiacao_global',
                            'temperatura_max', 'temperatura_min']
+            
             for col in numeric_cols:
                 if col in df_to_insert_db.columns:
-                    df_to_insert_db[col] = df_to_insert_db[col].fillna(df_to_insert_db[col].mean())
+                    # Calcular mediana apenas se houver valores não nulos
+                    if df_to_insert_db[col].notna().any():
+                        median_val = df_to_insert_db[col].median()
+                        df_to_insert_db[col] = df_to_insert_db[col].fillna(median_val)
+                    else:
+                        # Se todos os valores forem nulos, preencher com 0
+                        df_to_insert_db[col] = df_to_insert_db[col].fillna(0)
+            
+            # Para colunas categóricas, usar moda
+            categorical_cols = df_to_insert_db.select_dtypes(include=['object']).columns
+            for col in categorical_cols:
+                if col in df_to_insert_db.columns and df_to_insert_db[col].notna().any():
+                    mode_val = df_to_insert_db[col].mode()[0]
+                    df_to_insert_db[col] = df_to_insert_db[col].fillna(mode_val)
             
             final_db_count = len(df_to_insert_db)
             
             if final_db_count < initial_db_count:
                 logging.warning(f"Removidas {initial_db_count - final_db_count} linhas com valores nulos para inserção no banco")
             
+            # Verificação explícita antes da inserção
             if df_to_insert_db.empty:
-                logging.error("Nenhum dado válido para inserção no banco após todas as limpezas")
+                logging.warning("Nenhum dado válido para inserção após limpeza de nulos")
+                if db: db.close()
                 return
             
             logging.info(f"Preparando para inserir {len(df_to_insert_db)} registros no banco")
@@ -253,4 +281,5 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
+    
     
