@@ -71,7 +71,7 @@ def clean_and_transform():
                             logging.warning(f"Arquivo {file.name} está vazio")
                             continue
                             
-                        # Verificar se há colunas suficientes
+                        # Verificar if há colunas suficientes
                         if len(df.columns) < 2:
                             logging.warning(f"Arquivo {file.name} não tem colunas suficientes: {len(df.columns)}")
                             continue
@@ -203,7 +203,7 @@ def clean_and_transform():
         # VERIFICAÇÃO CRÍTICA: Remover quaisquer linhas com valores nulos em data ou hora
         combined_df = combined_df.dropna(subset=['data', 'hora'])
         
-        # Ordenar por data e hora
+        # Ordenar por data и hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
         # Adicionar features de tendência para uso no modelo (estas não são salvas no banco)
@@ -292,5 +292,4 @@ if __name__ == "__main__":
     logging.info("Iniciando processo ETL")
     clean_and_transform()
     logging.info("Processo ETL concluído")
-    
     
