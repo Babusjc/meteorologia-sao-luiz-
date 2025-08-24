@@ -48,7 +48,7 @@ def clean_and_transform():
             # TENTAR DIFERENTES COMBINAÇÕES DE SEPARADOR E ENCODING
             successful_read = False
             encoding_options = ['latin1', 'utf-8', 'iso-8859-1']
-            separator_options = ['\t', ';', ',']
+            separator_options = [';', '\t', ',']
             
             for encoding in encoding_options:
                 for separator in separator_options:
@@ -56,7 +56,7 @@ def clean_and_transform():
                         # Ler arquivo CSV
                         df = pd.read_csv(
                             file,
-                            sep=separator,  # Alterado para tentar diferentes separadores
+                            sep=separator,
                             decimal=",",
                             encoding=encoding,
                             on_bad_lines="skip",
