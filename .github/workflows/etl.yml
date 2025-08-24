@@ -63,7 +63,7 @@ jobs:
           file -i "$file"
           echo "Primeiras 2 linhas:"
           head -n 2 "$file"
-          echo "Número de campos na primeira linha:"
+          echo "Número de campos na primeira linha:" 
           head -n 1 "$file" | tr '\t' ' ' | wc -w
           echo ""
         done | head -20
@@ -72,124 +72,123 @@ jobs:
       run: |
         if [ ! -f "scripts/train_model.py" ]; then
           echo "Criando scripts/train_model.py..."
-          cat > scripts/train_model.py << 'EOF' | sed 's/^        //'
-        import pandas as pd
-        import numpy as np
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.model_selection import train_test_split
-        from sklearn.metrics import classification_report, accuracy_score
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.pipeline import make_pipeline
-        import joblib
-        from pathlib import Path
-        import logging
-
-        # Configurar logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-        def train_precipitation_model():
-            # Carregar dados processados
-            data_path = Path("data/processed/processed_weather_data.parquet")
-            if not data_path.exists():
-                logging.error("Dados processados não encontrados")
-                return
-            
-            try:
-                df = pd.read_parquet(data_path)
-                logging.info(f"Dados carregados com {len(df)} registros")
-            except Exception as e:
-                logging.error(f"Erro ao carregar dados: {str(e)}")
-                return
-            
-            # Criar coluna datetime combinada para análise temporal
-            if 'data' in df.columns and 'hora' in df.columns:
-                df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))
-                df['hour'] = df['datetime'].dt.hour
-                df['weekday'] = df['datetime'].dt.dayofweek
-                df['month'] = df['datetime'].dt.month
-            
-            # Preparar dados para modelagem
-            if "precipitacao_total" not in df.columns:
-                logging.error("Dados de precipitação ausentes")
-                return
-            
-            # Criar variável alvo (próxima hora)
-            df["target"] = df["precipitacao_total"].shift(-1).fillna(0)
-            
-            # Classificar chuva em categorias
-            conditions = [
-                (df["target"] == 0),
-                (df["target"] > 0) & (df["target"] <= 2.5),
-                (df["target"] > 2.5)
-            ]
-            choices = [0, 1, 2]  # 0: Sem chuva, 1: Chuva leve, 2: Chuva forte
-            df["rain_class"] = np.select(conditions, choices, default=0)
-            
-            # Features
-            features = [
-                "temperatura_ar", "umidade_relativa", "pressao_atm_estacao",
-                "radiacao_global", "temperatura_max", "temperatura_min",
-                "hour", "weekday", "month"
-            ]
-            
-            # Filtrar apenas colunas disponíveis
-            available_features = [f for f in features if f in df.columns]
-            
-            # Filtrar dados completos
-            df = df.dropna(subset=available_features + ["rain_class"])
-            
-            if df.empty:
-                logging.error("Nenhum dado disponível para treinamento")
-                return
-            
-            X = df[available_features]
-            y = df["rain_class"]
-            
-            # Verificar se temos dados suficientes para treinamento
-            if len(X) < 100:
-                logging.error(f"Dados insuficientes para treinamento: apenas {len(X)} amostras")
-                return
-            
-            # Dividir dados
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=y
-            )
-            
-            logging.info(f"Treinando modelo com {len(X_train)} amostras")
-            
-            # Criar e treinar modelo
-            try:
-                model = make_pipeline(
-                    StandardScaler(),
-                    RandomForestClassifier(
-                        n_estimators=100,
-                        max_depth=10,
-                        class_weight="balanced",
-                        random_state=42
-                    )
-                )
-                
-                model.fit(X_train, y_train)
-                logging.info("Modelo treinado com sucesso")
-                
-                # Avaliar
-                y_pred = model.predict(X_test)
-                accuracy = accuracy_score(y_test, y_pred)
-                logging.info(f"Acurácia: {accuracy:.2f}")
-                logging.info("\nRelatório de Classificação:\n" + classification_report(y_test, y_pred))
-                
-                # Salvar modelo
-                model_dir = Path("models")
-                model_dir.mkdir(exist_ok=True)
-                joblib.dump(model, model_dir / "precipitation_model.pkl")
-                logging.info("Modelo salvo com sucesso")
-                
-            except Exception as e:
-                logging.error(f"Erro ao treinar modelo: {str(e)}")
-
-        if __name__ == "__main__":
-            train_precipitation_model()
-        EOF
+          # Escreve o conteúdo do arquivo linha por linha
+          echo "import pandas as pd" > scripts/train_model.py
+          echo "import numpy as np" >> scripts/train_model.py
+          echo "from sklearn.ensemble import RandomForestClassifier" >> scripts/train_model.py
+          echo "from sklearn.model_selection import train_test_split" >> scripts/train_model.py
+          echo "from sklearn.metrics import classification_report, accuracy_score" >> scripts/train_model.py
+          echo "from sklearn.preprocessing import StandardScaler" >> scripts/train_model.py
+          echo "from sklearn.pipeline import make_pipeline" >> scripts/train_model.py
+          echo "import joblib" >> scripts/train_model.py
+          echo "from pathlib import Path" >> scripts/train_model.py
+          echo "import logging" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "# Configurar logging" >> scripts/train_model.py
+          echo "logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "def train_precipitation_model():" >> scripts/train_model.py
+          echo "    # Carregar dados processados" >> scripts/train_model.py
+          echo "    data_path = Path(\"data/processed/processed_weather_data.parquet\")" >> scripts/train_model.py
+          echo "    if not data_path.exists():" >> scripts/train_model.py
+          echo "        logging.error(\"Dados processados não encontrados\")" >> scripts/train_model.py
+          echo "        return" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    try:" >> scripts/train_model.py
+          echo "        df = pd.read_parquet(data_path)" >> scripts/train_model.py
+          echo "        logging.info(f\"Dados carregados com {len(df)} registros\")" >> scripts/train_model.py
+          echo "    except Exception as e:" >> scripts/train_model.py
+          echo "        logging.error(f\"Erro ao carregar dados: {str(e)}\")" >> scripts/train_model.py
+          echo "        return" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Criar coluna datetime combinada para análise temporal" >> scripts/train_model.py
+          echo "    if 'data' in df.columns and 'hora' in df.columns:" >> scripts/train_model.py
+          echo "        df['datetime'] = pd.to_datetime(df['data'].astype(str) + ' ' + df['hora'].astype(str))" >> scripts/train_model.py
+          echo "        df['hour'] = df['datetime'].dt.hour" >> scripts/train_model.py
+          echo "        df['weekday'] = df['datetime'].dt.dayofweek" >> scripts/train_model.py
+          echo "        df['month'] = df['datetime'].dt.month" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Preparar dados para modelagem" >> scripts/train_model.py
+          echo "    if \"precipitacao_total\" not in df.columns:" >> scripts/train_model.py
+          echo "        logging.error(\"Dados de precipitação ausentes\")" >> scripts/train_model.py
+          echo "        return" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Criar variável alvo (próxima hora)" >> scripts/train_model.py
+          echo "    df[\"target\"] = df[\"precipitacao_total\"].shift(-1).fillna(0)" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Classificar chuva em categorias" >> scripts/train_model.py
+          echo "    conditions = [" >> scripts/train_model.py
+          echo "        (df[\"target\"] == 0)," >> scripts/train_model.py
+          echo "        (df[\"target\"] > 0) & (df[\"target\"] <= 2.5)," >> scripts/train_model.py
+          echo "        (df[\"target\"] > 2.5)" >> scripts/train_model.py
+          echo "    ]" >> scripts/train_model.py
+          echo "    choices = [0, 1, 2]  # 0: Sem chuva, 1: Chuva leve, 2: Chuva forte" >> scripts/train_model.py
+          echo "    df[\"rain_class\"] = np.select(conditions, choices, default=0)" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Features" >> scripts/train_model.py
+          echo "    features = [" >> scripts/train_model.py
+          echo "        \"temperatura_ar\", \"umidade_relativa\", \"pressao_atm_estacao\"," >> scripts/train_model.py
+          echo "        \"radiacao_global\", \"temperatura_max\", \"temperatura_min\"," >> scripts/train_model.py
+          echo "        \"hour\", \"weekday\", \"month\"" >> scripts/train_model.py
+          echo "    ]" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Filtrar apenas colunas disponíveis" >> scripts/train_model.py
+          echo "    available_features = [f for f in features if f in df.columns]" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Filtrar dados completos" >> scripts/train_model.py
+          echo "    df = df.dropna(subset=available_features + [\"rain_class\"])" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    if df.empty:" >> scripts/train_model.py
+          echo "        logging.error(\"Nenhum dado disponível para treinamento\")" >> scripts/train_model.py
+          echo "        return" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    X = df[available_features]" >> scripts/train_model.py
+          echo "    y = df[\"rain_class\"]" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Verificar se temos dados suficientes para treinamento" >> scripts/train_model.py
+          echo "    if len(X) < 100:" >> scripts/train_model.py
+          echo "        logging.error(f\"Dados insuficientes para treinamento: apenas {len(X)} amostras\")" >> scripts/train_model.py
+          echo "        return" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Dividir dados" >> scripts/train_model.py
+          echo "    X_train, X_test, y_train, y_test = train_test_split(" >> scripts/train_model.py
+          echo "        X, y, test_size=0.2, random_state=42, stratify=y" >> scripts/train_model.py
+          echo "    )" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    logging.info(f\"Treinando modelo com {len(X_train)} amostras\")" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    # Criar e treinar modelo" >> scripts/train_model.py
+          echo "    try:" >> scripts/train_model.py
+          echo "        model = make_pipeline(" >> scripts/train_model.py
+          echo "            StandardScaler()," >> scripts/train_model.py
+          echo "            RandomForestClassifier(" >> scripts/train_model.py
+          echo "                n_estimators=100," >> scripts/train_model.py
+          echo "                max_depth=10," >> scripts/train_model.py
+          echo "                class_weight=\"balanced\"," >> scripts/train_model.py
+          echo "                random_state=42" >> scripts/train_model.py
+          echo "            )" >> scripts/train_model.py
+          echo "        )" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "        model.fit(X_train, y_train)" >> scripts/train_model.py
+          echo "        logging.info(\"Modelo treinado com sucesso\")" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "        # Avaliar" >> scripts/train_model.py
+          echo "        y_pred = model.predict(X_test)" >> scripts/train_model.py
+          echo "        accuracy = accuracy_score(y_test, y_pred)" >> scripts/train_model.py
+          echo "        logging.info(f\"Acurácia: {accuracy:.2f}\")" >> scripts/train_model.py
+          echo "        logging.info(\"\nRelatório de Classificação:\n\" + classification_report(y_test, y_pred))" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "        # Salvar modelo" >> scripts/train_model.py
+          echo "        model_dir = Path(\"models\")" >> scripts/train_model.py
+          echo "        model_dir.mkdir(exist_ok=True)" >> scripts/train_model.py
+          echo "        joblib.dump(model, model_dir / \"precipitation_model.pkl\")" >> scripts/train_model.py
+          echo "        logging.info(\"Modelo salvo com sucesso\")" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "    except Exception as e:" >> scripts/train_model.py
+          echo "        logging.error(f\"Erro ao treinar modelo: {str(e)}\")" >> scripts/train_model.py
+          echo "" >> scripts/train_model.py
+          echo "if __name__ == \"__main__\":" >> scripts/train_model.py
+          echo "    train_precipitation_model()" >> scripts/train_model.py
         fi
 
     - name: RUN ETL and ML Training
