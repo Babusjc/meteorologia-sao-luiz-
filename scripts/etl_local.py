@@ -19,7 +19,7 @@ def clean_and_transform():
     # Carregar variáveis de ambiente (para NEON_DB_URL)
     load_dotenv()
     
-    db = None # Inicializa db como None
+    db = None
     try:
         # Conectar ao banco de dados usando a classe ETLDB
         db = ETLDB()
@@ -54,6 +54,9 @@ def clean_and_transform():
                 on_bad_lines="skip",
                 na_values=["", " ", "null", "NaN", "null", "NULL"]
             )
+            
+            # Log inicial do arquivo
+            logging.info(f"Processando {file.name} - {len(df)} linhas iniciais")
             
             # Padronizar nomes de colunas
             df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
@@ -103,14 +106,23 @@ def clean_and_transform():
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
+            # Verificar dados antes da limpeza
+            logging.info(f"Antes da limpeza - {file.name}: {len(df)} linhas")
+            
             # Remover linhas com dados essenciais faltantes
+            initial_count = len(df)
             df = df.dropna(subset=['data', 'hora'])
+            removed_count = initial_count - len(df)
             
-            # Substituir NaT por None para evitar problemas no banco de dados
-            df = df.replace({pd.NaT: None})
+            if removed_count > 0:
+                logging.warning(f"Removidas {removed_count} linhas com data/hora inválidos em {file.name}")
             
-            dfs.append(df)
-            logging.info(f"Processado {file.name} com sucesso")
+            # Verificar dados após a limpeza
+            if len(df) > 0:
+                logging.info(f"Após limpeza - {file.name}: {len(df)} linhas válidas")
+                dfs.append(df)
+            else:
+                logging.warning(f"Arquivo {file.name} não contém dados válidos após limpeza")
             
         except Exception as e:
             logging.error(f"Erro ao processar {file.name}: {str(e)}")
@@ -144,21 +156,35 @@ def clean_and_transform():
         # Inserir no banco de dados (apenas colunas que existem no banco)
         try:
             # Filtrar o DataFrame para incluir apenas as colunas que serão inseridas no banco
-            df_to_insert_db = combined_df[relevant_cols].copy()
+            db_cols = [col for col in relevant_cols if col in combined_df.columns]
+            df_to_insert_db = combined_df[db_cols].copy()
             
             # Garantir que não há valores NaT/NaN antes da inserção
             df_to_insert_db = df_to_insert_db.replace({pd.NaT: None, np.nan: None})
             
             # VERIFICAÇÃO FINAL: Remover quaisquer linhas com valores nulos nas colunas críticas
+            initial_db_count = len(df_to_insert_db)
             df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
+            final_db_count = len(df_to_insert_db)
+            
+            if final_db_count < initial_db_count:
+                logging.warning(f"Removidas {initial_db_count - final_db_count} linhas com valores nulos para inserção no banco")
+            
+            if df_to_insert_db.empty:
+                logging.error("Nenhum dado válido para inserção no banco após todas as limpezas")
+                return
+            
+            logging.info(f"Preparando para inserir {len(df_to_insert_db)} registros no banco")
             
             success = db.insert_data(df_to_insert_db, "meteo_data")
             if success:
-                logging.info("Dados inseridos no banco com sucesso")
+                logging.info(f"Dados inseridos no banco com sucesso: {len(df_to_insert_db)} registros")
             else:
                 logging.error("Falha ao inserir dados no banco")
         except Exception as e:
             logging.error(f"Erro ao inserir dados no banco: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
     else:
         logging.warning("Nenhum dado processado")
     
