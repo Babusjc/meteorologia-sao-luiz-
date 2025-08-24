@@ -45,18 +45,45 @@ def clean_and_transform():
     dfs = []
     for file in csv_files:
         try:
-            # Ler arquivo CSV
-            df = pd.read_csv(
-                file,
-                sep=";",
-                decimal=",",
-                encoding="latin1",
-                on_bad_lines="skip",
-                na_values=["", " ", "null", "NaN", "null", "NULL"]
-            )
+            # TENTAR DIFERENTES COMBINAÇÕES DE SEPARADOR E ENCODING
+            successful_read = False
+            encoding_options = ['latin1', 'utf-8', 'iso-8859-1']
+            separator_options = ['\t', ';', ',']
+            
+            for encoding in encoding_options:
+                for separator in separator_options:
+                    try:
+                        # Ler arquivo CSV
+                        df = pd.read_csv(
+                            file,
+                            sep=separator,  # Alterado para tentar diferentes separadores
+                            decimal=",",
+                            encoding=encoding,
+                            on_bad_lines="skip",
+                            na_values=["", " ", "null", "NaN", "null", "NULL"]
+                        )
+                        
+                        # Se chegou aqui sem erro, a leitura foi bem-sucedida
+                        logging.info(f"Arquivo {file.name} lido com sucesso usando encoding={encoding}, separator='{separator}'")
+                        successful_read = True
+                        break
+                    except Exception as e:
+                        continue
+                
+                if successful_read:
+                    break
+            
+            if not successful_read:
+                logging.error(f"Falha ao ler arquivo {file.name} com qualquer combinação de encoding/separador")
+                continue
             
             # Log inicial do arquivo
             logging.info(f"Processando {file.name} - {len(df)} linhas iniciais")
+            
+            # DEBUG: Mostrar primeiras linhas e informações do DataFrame
+            logging.debug(f"Colunas encontradas: {list(df.columns)}")
+            if len(df) > 0:
+                logging.debug(f"Primeira linha de dados: {dict(df.iloc[0])}")
             
             # Padronizar nomes de colunas
             df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
@@ -64,19 +91,34 @@ def clean_and_transform():
             # Renomear colunas para corresponder ao schema do banco
             column_mapping = {
                 'data': 'data',
-                'horas': 'hora',
+                'hora': 'hora',
                 'precipitação_total': 'precipitacao_total',
+                'precipitacao_total': 'precipitacao_total',
                 'pressao_atmosferica_ao_nivel_da_estacao,_horaria_(mb)': 'pressao_atm_estacao',
+                'pressao_atm_estacao': 'pressao_atm_estacao',
                 'radiacao_global_(kj/m²)': 'radiacao_global',
+                'radiacao_global': 'radiacao_global',
                 'temperatura_do_ar_(°c)': 'temperatura_ar',
+                'temperatura_ar': 'temperatura_ar',
                 'umidade_relativa_do_ar,_horaria_(%)': 'umidade_relativa',
+                'umidade_relativa': 'umidade_relativa',
                 'vento_-_velocidade_horaria_(m/s)': 'vento_velocidade',
+                'vento_velocidade': 'vento_velocidade',
                 'vento_-_direção_horaria_(gr)': 'vento_direcao',
+                'vento_direcao': 'vento_direcao',
                 'temperatura_máxima_na_hora_ant._(°c)': 'temperatura_max',
-                'temperatura_mínima_na_hora_ant._(°c)': 'temperatura_min'
+                'temperatura_max': 'temperatura_max',
+                'temperatura_mínima_na_hora_ant._(°c)': 'temperatura_min',
+                'temperatura_min': 'temperatura_min'
             }
             
-            df = df.rename(columns=column_mapping)
+            # Aplicar mapeamento apenas para colunas existentes
+            existing_columns = {}
+            for old_name, new_name in column_mapping.items():
+                if old_name in df.columns:
+                    existing_columns[old_name] = new_name
+            
+            df = df.rename(columns=existing_columns)
             
             # Manter apenas colunas relevantes para o banco de dados
             relevant_cols = [
@@ -91,7 +133,7 @@ def clean_and_transform():
             
             # Converter tipos de dados
             if 'data' in df.columns:
-                df['data'] = pd.to_datetime(df['data'], errors='coerce').dt.date
+                df['data'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True).dt.date
             
             if 'hora' in df.columns:
                 # Converter hora para formato time, tratando valores inválidos
@@ -126,6 +168,8 @@ def clean_and_transform():
             
         except Exception as e:
             logging.error(f"Erro ao processar {file.name}: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
     
     # Combinar todos os dados
     if dfs:
