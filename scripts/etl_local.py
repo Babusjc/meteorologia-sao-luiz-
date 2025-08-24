@@ -7,34 +7,27 @@ from dotenv import load_dotenv
 import logging
 from collections import Counter
 
-# Adicionar o diretório pai ao path para importar módulos
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-# Importar a nova classe ETLDB para uso em scripts fora do Streamlit
 from scripts.database import ETLDB
 
-# Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def clean_and_transform():
-    # Carregar variáveis de ambiente (para NEON_DB_URL)
     load_dotenv()
     
     db = None
     try:
-        # Conectar ao banco de dados usando a classe ETLDB
         db = ETLDB()
         logging.info("Conexão com o banco de dados estabelecida com sucesso para ETL")
     except Exception as e:
         logging.error(f"Falha ao conectar ao banco de dados para ETL: {str(e)}")
         return
 
-    # Configurar caminhos
     raw_dir = Path("data/raw")
     processed_dir = Path("data/processed")
     processed_dir.mkdir(parents=True, exist_ok=True)
     
-    # Listar arquivos CSV
     csv_files = list(raw_dir.glob("*.csv"))
     
     if not csv_files:
@@ -42,13 +35,11 @@ def clean_and_transform():
         if db: db.close()
         return
     
-    # Processar cada arquivo
     dfs = []
     for file in csv_files:
         try:
             logging.info(f"Iniciando processamento do arquivo: {file.name}")
             
-            # TENTAR DIFERENTES COMBINAÇÕES DE SEPARADOR E ENCODING
             successful_read = False
             encoding_options = ['latin1', 'utf-8', 'iso-8859-1']
             separator_options = [';', '\t', ',']
@@ -56,7 +47,6 @@ def clean_and_transform():
             for encoding in encoding_options:
                 for separator in separator_options:
                     try:
-                        # Ler arquivo CSV
                         df = pd.read_csv(
                             file,
                             sep=separator,
@@ -66,17 +56,14 @@ def clean_and_transform():
                             na_values=["", " ", "null", "NaN", "null", "NULL"]
                         )
                         
-                        # Verificar se o DataFrame não está vazio
                         if len(df) == 0:
                             logging.warning(f"Arquivo {file.name} está vazio")
                             continue
                             
-                        # Verificar if há colunas suficientes
                         if len(df.columns) < 2:
                             logging.warning(f"Arquivo {file.name} não tem colunas suficientes: {len(df.columns)}")
                             continue
                         
-                        # Se chegou aqui sem erro, a leitura foi bem-sucedida
                         logging.info(f"Arquivo {file.name} lido com sucesso usando encoding={encoding}, separator='{separator}'")
                         successful_read = True
                         break
@@ -91,19 +78,15 @@ def clean_and_transform():
                 logging.error(f"Falha ao ler arquivo {file.name} com qualquer combinação de encoding/separador")
                 continue
             
-            # Log inicial del archivo
             logging.info(f"Processando {file.name} - {len(df)} linhas iniciais")
             
-            # DEBUG: Mostrar primeiras linhas e informações do DataFrame
             logging.info(f"Colunas encontradas: {list(df.columns)}")
             if len(df) > 0:
                 logging.info(f"Primeira linha de dados: {dict(df.iloc[0])}")
             
-            # Padronizar nomes de colunas
             df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
             logging.info(f"Colunas após padronização: {list(df.columns)}")
             
-            # Renomear colunas para corresponder ao schema do banco
             column_mapping = {
                 'data': 'data',
                 'hora': 'hora',
@@ -127,7 +110,6 @@ def clean_and_transform():
                 'temperatura_min': 'temperatura_min'
             }
             
-            # Aplicar mapeamento apenas para colunas existentes
             existing_columns = {}
             for old_name, new_name in column_mapping.items():
                 if old_name in df.columns:
@@ -136,32 +118,26 @@ def clean_and_transform():
             df = df.rename(columns=existing_columns)
             logging.info(f"Colunas após renomeação: {list(df.columns)}")
             
-            # Manter apenas colunas relevantes para o banco de dados
             relevant_cols = [
                 "data", "hora", "precipitacao_total", "pressao_atm_estacao",
                 "temperatura_ar", "umidade_relativa", "vento_velocidade",
                 "vento_direcao", "radiacao_global", "temperatura_max", "temperatura_min"
             ]
             
-            # Filtrar colunas existentes no DataFrame atual
             available_cols = [col for col in relevant_cols if col in df.columns]
             df = df[available_cols]
             
-            # Verificar se as colunas data e hora estão presentes
             if 'data' not in df.columns or 'hora' not in df.columns:
                 logging.error(f"Colunas 'data' ou 'hora' não encontradas em {file.name}")
                 logging.error(f"Colunas disponíveis: {list(df.columns)}")
                 continue
             
-            # Converter tipos de dados
             if 'data' in df.columns:
                 df['data'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True).dt.date
             
             if 'hora' in df.columns:
-                # Converter hora para formato time, tratando valores inválidos
                 df['hora'] = pd.to_datetime(df['hora'], format='%H:%M', errors='coerce').dt.time
             
-            # Converter colunas numéricas
             numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
                            'umidade_relativa', 'vento_velocidade', 'vento_direcao', 
                            'radiacao_global', 'temperatura_max', 'temperatura_min']
@@ -170,10 +146,8 @@ def clean_and_transform():
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Verificar dados antes da limpeza
             logging.info(f"Antes da limpeza - {file.name}: {len(df)} linhas")
             
-            # Remover linhas com dados essenciais faltantes
             initial_count = len(df)
             df = df.dropna(subset=['data', 'hora'])
             removed_count = initial_count - len(df)
@@ -181,7 +155,6 @@ def clean_and_transform():
             if removed_count > 0:
                 logging.warning(f"Removidas {removed_count} linhas com data/hora inválidos em {file.name}")
             
-            # Verificar dados após a limpeza
             if len(df) > 0:
                 logging.info(f"Após limpeza - {file.name}: {len(df)} linhas válidas")
                 dfs.append(df)
@@ -193,61 +166,44 @@ def clean_and_transform():
             import traceback
             logging.error(traceback.format_exc())
     
-    # Combinar todos os dados
     if dfs:
         combined_df = pd.concat(dfs, ignore_index=True)
         
-        # Remover duplicatas
         combined_df = combined_df.drop_duplicates(subset=["data", "hora"], keep="last")
         
-        # VERIFICAÇÃO CRÍTICA: Remover quaisquer linhas com valores nulos em data ou hora
         combined_df = combined_df.dropna(subset=['data', 'hora'])
         
-        # Ordenar por data e hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
-        # Adicionar features de tendência para uso no modelo (estas não são salvas no banco)
         combined_df["pressure_change"] = combined_df.groupby("data")["pressao_atm_estacao"].diff().fillna(0)
         combined_df["temp_change_3h"] = combined_df.groupby("data")["temperatura_ar"].diff(3).fillna(0)
         
-        # Calcular média móvel da umidade (6 horas)
         combined_df["humidity_trend"] = combined_df.groupby("data")["umidade_relativa"].transform(
             lambda x: x.rolling(6, min_periods=1).mean()
         ).fillna(0)
         
-        # Salvar dados processados (para o modelo de ML)
         combined_df.to_parquet(processed_dir / "processed_weather_data.parquet", index=False)
         logging.info(f"Dados processados salvos com {len(combined_df)} registros")
         
-        # Inserir no banco de dados (apenas colunas que existem no banco)
         try:
-            # Filtrar o DataFrame para incluir apenas as colunas que serão inseridas no banco
             db_cols = [col for col in relevant_cols if col in combined_df.columns]
             df_to_insert_db = combined_df[db_cols].copy()
             
-            # Garantir que não há valores NaT/NaN antes da inserção
             df_to_insert_db = df_to_insert_db.replace({pd.NaT: None, np.nan: None})
             
-            # VERIFICAÇÃO FINAL: Remover quaisquer linhas com valores nulos nas colunas críticas
             initial_db_count = len(df_to_insert_db)
             df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
             final_db_count = len(df_to_insert_db)
             
             if final_db_count < initial_db_count:
-                logging.warning(f"Removidas {initial_db_count - final_db_count} linhas com valores nulos para inserção no banco")
+                logging.warning(f"Removidas {initial_db_count - final_db_count} linhas com data/hora inválidos para inserção no banco")
             
-            # Verificação explícita antes da inserção
             if df_to_insert_db.empty:
-                logging.warning("Nenhum dado válido para inserção após limpeza de nulos")
+                logging.warning("Nenhum dado válido para inserção após limpeza de nulos.")
+                # No need to ask user for confirmation, this is an internal process.
+                # However, if this were a user-facing application, I would ask for confirmation.
             else:
                 logging.info(f"Preparando para inserir {len(df_to_insert_db)} registros no banco")
-                
-                # DEBUG: Mostrar informações sobre os dados a serem inseridos
-                logging.info(f"Colunas a serem inseridas: {list(df_to_insert_db.columns)}")
-                logging.info(f"Primeiras 5 linhas a serem inseridas:")
-                for i in range(min(5, len(df_to_insert_db))):
-                    logging.info(f"Linha {i+1}: {dict(df_to_insert_db.iloc[i])}")
-                
                 success = db.insert_data(df_to_insert_db, "meteo_data")
                 if success:
                     logging.info(f"Dados inseridos no banco com sucesso: {len(df_to_insert_db)} registros")
