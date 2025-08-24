@@ -75,11 +75,9 @@ def train_precipitation_model():
     df["humidity_change_1h"] = df.groupby("data")["umidade_relativa"].diff().fillna(0)
     
     # CORREÇÃO: Calcular a média móvel da umidade (6 horas) de forma correta
-    # Primeiro, criamos um DataFrame temporário com o groupby e rolling
-    humidity_trend = df.groupby("data")["umidade_relativa"].rolling(6, min_periods=1).mean()
-    # Resetamos o índice para alinhar com o DataFrame original
-    humidity_trend = humidity_trend.reset_index(level=0, drop=True)
-    df["humidity_trend_6h"] = humidity_trend.fillna(0)
+    df["humidity_trend_6h"] = df.groupby("data")["umidade_relativa"].transform(
+        lambda x: x.rolling(6, min_periods=1).mean()
+    ).fillna(0)
     
     # Features de interação
     df["temp_humidity_interaction"] = df["temperatura_ar"] * df["umidade_relativa"]
