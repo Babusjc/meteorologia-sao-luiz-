@@ -81,12 +81,13 @@ def clean_and_transform():
             logging.info(f"Processando {file.name} - {len(df)} linhas iniciais")
             
             # DEBUG: Mostrar primeiras linhas e informações do DataFrame
-            logging.debug(f"Colunas encontradas: {list(df.columns)}")
+            logging.info(f"Colunas encontradas: {list(df.columns)}")
             if len(df) > 0:
-                logging.debug(f"Primeira linha de dados: {dict(df.iloc[0])}")
+                logging.info(f"Primeira linha de dados: {dict(df.iloc[0])}")
             
             # Padronizar nomes de colunas
             df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+            logging.info(f"Colunas após padronização: {list(df.columns)}")
             
             # Renomear colunas para corresponder ao schema do banco
             column_mapping = {
@@ -119,6 +120,7 @@ def clean_and_transform():
                     existing_columns[old_name] = new_name
             
             df = df.rename(columns=existing_columns)
+            logging.info(f"Colunas após renomeação: {list(df.columns)}")
             
             # Manter apenas colunas relevantes para o banco de dados
             relevant_cols = [
@@ -130,6 +132,12 @@ def clean_and_transform():
             # Filtrar colunas existentes no DataFrame atual
             available_cols = [col for col in relevant_cols if col in df.columns]
             df = df[available_cols]
+            
+            # Verificar se as colunas data e hora estão presentes
+            if 'data' not in df.columns or 'hora' not in df.columns:
+                logging.error(f"Colunas 'data' ou 'hora' não encontradas em {file.name}")
+                logging.error(f"Colunas disponíveis: {list(df.columns)}")
+                continue
             
             # Converter tipos de dados
             if 'data' in df.columns:
