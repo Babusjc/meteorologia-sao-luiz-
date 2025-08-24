@@ -43,6 +43,31 @@ jobs:
         echo "Tamanho dos arquivos:"
         du -h data/raw/*.csv | head -10
 
+    - name: Verificar conteúdo dos arquivos CSV
+      run: |
+        echo "Conteúdo do primeiro arquivo CSV:"
+        head -n 3 data/raw/INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2024.csv
+        echo ""
+        echo "Estrutura dos arquivos CSV (primeira linha):"
+        for file in data/raw/*.csv; do
+          echo "=== $file ==="
+          head -n 1 "$file"
+          echo ""
+        done | head -5
+
+    - name: Verificar encoding e separadores
+      run: |
+        echo "Verificando encoding e separadores dos arquivos:"
+        for file in data/raw/*.csv; do
+          echo "=== $file ==="
+          file -i "$file"
+          echo "Primeiras 2 linhas:"
+          head -n 2 "$file"
+          echo "Número de campos na primeira linha:"
+          head -n 1 "$file" | tr '\t' ' ' | wc -w
+          echo ""
+        done | head -20
+
     - name: Create train_model.py if not exists
       run: |
         if [ ! -f "scripts/train_model.py" ]; then
@@ -174,17 +199,38 @@ jobs:
         mkdir -p data/processed
         mkdir -p models
         
-        echo "Executando ETL..."
+        echo "Executando ETL com logging detalhado..."
         python scripts/etl_local.py
         
         # Verificar se o ETL criou os dados processados
         if [ -f "data/processed/processed_weather_data.parquet" ]; then
-          echo "Treinando modelo com dados processados..."
+          echo "Dados processados encontrados, treinando modelo..."
           python scripts/train_model.py
+          
+          # Verificar se os dados foram inseridos no banco
+          echo "Verificando dados no banco Neon..."
+          python -c "
+          import pandas as pd
+          from scripts.database import get_data_from_db
+          try:
+              df = get_data_from_db('SELECT COUNT(*) as total FROM meteo_data')
+              print(f'Total de registros no banco: {df[\"total\"][0]}')
+              
+              # Verificar dados mais recentes
+              recent_data = get_data_from_db('SELECT * FROM meteo_data ORDER BY data DESC, hora DESC LIMIT 5')
+              print('Dados mais recentes no banco:')
+              print(recent_data)
+          except Exception as e:
+              print(f'Erro ao consultar banco: {e}')
+          "
         else
-          echo "AVISO: Nenhum dado processado disponível para treinamento"
-          echo "Verificando se há arquivos CSV na pasta raw:"
+          echo "AVISO: Nenhum dado processado disponível"
+          echo "Conteúdo da pasta data/raw:"
           ls -la data/raw/
+          echo "Primeiras linhas de um arquivo CSV:"
+          head -n 5 data/raw/INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2024.csv
+          echo "Verificando problemas de encoding:"
+          file -i data/raw/INMET_SE_SP_A740_SAO_LUIZ_DO_PARAITINGA_2024.csv
         fi
 
     - name: Commit processed data
