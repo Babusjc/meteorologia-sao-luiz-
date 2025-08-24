@@ -112,19 +112,23 @@ class ETLDB:
         # CORREÇÃO: Substituir todos os valores NaT/NaN por None
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
 
-        # CORREÇÃO CRÍTICA: Remover linhas com data ou hora nulos
+        # CORREÇÃO CRÍTICA: Remover apenas linhas onde data OU hora são nulos
+        # Não remover linhas onde outros campos são nulos
         initial_count = len(df_to_insert)
         df_to_insert = df_to_insert.dropna(subset=['data', 'hora'])
         final_count = len(df_to_insert)
         
         if final_count < initial_count:
-            logging.warning(f"Removidas {initial_count - final_count} linhas com valores nulos para inserção no banco")
+            logging.warning(f"Removidas {initial_count - final_count} linhas com data/hora inválidos para inserção no banco")
 
         # Se não houver dados após a limpeza, retornar
         if df_to_insert.empty:
-            logging.warning("Nenhum dado válido para inserção após limpeza de nulos.")
+            logging.warning("Nenhum dado válido para inserção após limpeza de data/hora nulos.")
             return True
 
+        # NÃO aplicar preenchimento de valores nulos para outras colunas
+        # O banco de dados pode lidar com valores NULL para colunas não obrigatórias
+        
         cols_sql = ", ".join(expected_cols)
         placeholders = ", ".join(["%s"] * len(expected_cols))
         update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])  # pula PK
