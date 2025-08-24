@@ -1,5 +1,3 @@
-# scripts/database.py
-
 from __future__ import annotations
 import os
 import logging
@@ -10,10 +8,6 @@ import streamlit as st
 import psycopg2
 import psycopg2.extras as pg_extras
 
-
-# -----------------------------
-# Uso no Streamlit (dashboard)
-# -----------------------------
 
 def get_data_from_db(query: str) -> pd.DataFrame:
     """
@@ -34,11 +28,6 @@ def get_data_from_db(query: str) -> pd.DataFrame:
         logging.error(f"Falha ao conectar ou executar a consulta: {e}")
         st.error(f"Erro ao acessar o banco de dados: {e}")
         return pd.DataFrame()
-
-
-# ----------------------------------------
-# Uso em scripts (ETL/CI) fora do Streamlit
-# ----------------------------------------
 
 class ETLDB:
     """
@@ -96,44 +85,33 @@ class ETLDB:
             "radiacao_global", "temperatura_max", "temperatura_min",
         ]
 
-        # Reindexa e converte NaN -> None para permitir INSERT
         df_to_insert = (
             df.reindex(columns=expected_cols)
               .copy()
         )
 
-        # Converte tipos de data/hora se vierem como string/objeto
         if "data" in df_to_insert.columns:
             df_to_insert["data"] = pd.to_datetime(df_to_insert["data"], errors="coerce").dt.date
         if "hora" in df_to_insert.columns:
-            # aceita strings HH:MM ou datetime.time
             df_to_insert["hora"] = pd.to_datetime(df_to_insert["hora"], errors="coerce").dt.time
 
-        # CORREÇÃO: Substituir todos os valores NaT/NaN por None
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
 
-        # CORREÇÃO CRÍTICA: Remover apenas linhas onde data OU hora são nulos
-        # Não remover linhas onde outros campos são nulos
         initial_count = len(df_to_insert)
-        df_to_insert = df_to_insert.dropna(subset=['data', 'hora'])
+        df_to_insert = df_to_insert.dropna(subset=["data", "hora"])
         final_count = len(df_to_insert)
         
         if final_count < initial_count:
             logging.warning(f"Removidas {initial_count - final_count} linhas com data/hora inválidos para inserção no banco")
 
-        # Se não houver dados após a limpeza, retornar
         if df_to_insert.empty:
             logging.warning("Nenhum dado válido para inserção após limpeza de data/hora nulos.")
-            return True
+            return False
 
-        # NÃO aplicar preenchimento de valores nulos para outras colunas
-        # O banco de dados pode lidar com valores NULL para colunas não obrigatórias
-        
         cols_sql = ", ".join(expected_cols)
         placeholders = ", ".join(["%s"] * len(expected_cols))
-        update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])  # pula PK
+        update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])
 
-        # CORREÇÃO: Usar template correto para execute_values
         template = f"({placeholders})"
         
         upsert_sql = f"""
@@ -146,7 +124,6 @@ class ETLDB:
         values = [tuple(row[c] for c in expected_cols) for _, row in df_to_insert.iterrows()]
 
         try:
-            # CORREÇÃO: Usar execute_values com template explícito
             pg_extras.execute_values(
                 self.cursor, 
                 upsert_sql, 
