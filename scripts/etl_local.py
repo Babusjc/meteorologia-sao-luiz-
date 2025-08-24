@@ -203,7 +203,7 @@ def clean_and_transform():
         # VERIFICAÇÃO CRÍTICA: Remover quaisquer linhas com valores nulos em data ou hora
         combined_df = combined_df.dropna(subset=['data', 'hora'])
         
-        # Ordenar por data и hora
+        # Ordenar por data e hora
         combined_df = combined_df.sort_values(["data", "hora"])
         
         # Adicionar features de tendência para uso no modelo (estas não são salvas no banco)
@@ -231,30 +231,6 @@ def clean_and_transform():
             # VERIFICAÇÃO FINAL: Remover quaisquer linhas com valores nulos nas colunas críticas
             initial_db_count = len(df_to_insert_db)
             df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
-            
-            # MODIFICAÇÃO: Tratamento mais robusto de valores nulos
-            # Para colunas numéricas, usar mediana (menos sensível a outliers)
-            numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
-                           'umidade_relativa', 'vento_velocidade', 'radiacao_global',
-                           'temperatura_max', 'temperatura_min']
-            
-            for col in numeric_cols:
-                if col in df_to_insert_db.columns:
-                    # Calcular mediana apenas se houver valores não nulos
-                    if df_to_insert_db[col].notna().any():
-                        median_val = df_to_insert_db[col].median()
-                        df_to_insert_db[col] = df_to_insert_db[col].fillna(median_val)
-                    else:
-                        # Se todos os valores forem nulos, preencher com 0
-                        df_to_insert_db[col] = df_to_insert_db[col].fillna(0)
-            
-            # Para colunas categóricas, usar moda
-            categorical_cols = df_to_insert_db.select_dtypes(include=['object']).columns
-            for col in categorical_cols:
-                if col in df_to_insert_db.columns and df_to_insert_db[col].notna().any():
-                    mode_val = df_to_insert_db[col].mode()[0]
-                    df_to_insert_db[col] = df_to_insert_db[col].fillna(mode_val)
-            
             final_db_count = len(df_to_insert_db)
             
             if final_db_count < initial_db_count:
@@ -292,4 +268,3 @@ if __name__ == "__main__":
     logging.info("Iniciando processo ETL")
     clean_and_transform()
     logging.info("Processo ETL concluído")
-    
