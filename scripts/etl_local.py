@@ -46,6 +46,8 @@ def clean_and_transform():
     dfs = []
     for file in csv_files:
         try:
+            logging.info(f"Iniciando processamento do arquivo: {file.name}")
+            
             # TENTAR DIFERENTES COMBINAÇÕES DE SEPARADOR E ENCODING
             successful_read = False
             encoding_options = ['latin1', 'utf-8', 'iso-8859-1']
@@ -79,6 +81,7 @@ def clean_and_transform():
                         successful_read = True
                         break
                     except Exception as e:
+                        logging.debug(f"Tentativa falhou - encoding={encoding}, separator='{separator}': {str(e)}")
                         continue
                 
                 if successful_read:
@@ -260,26 +263,34 @@ def clean_and_transform():
             # Verificação explícita antes da inserção
             if df_to_insert_db.empty:
                 logging.warning("Nenhum dado válido para inserção após limpeza de nulos")
-                if db: db.close()
-                return
-            
-            logging.info(f"Preparando para inserir {len(df_to_insert_db)} registros no banco")
-            
-            success = db.insert_data(df_to_insert_db, "meteo_data")
-            if success:
-                logging.info(f"Dados inseridos no banco com sucesso: {len(df_to_insert_db)} registros")
             else:
-                logging.error("Falha ao inserir dados no banco")
+                logging.info(f"Preparando para inserir {len(df_to_insert_db)} registros no banco")
+                
+                # DEBUG: Mostrar informações sobre os dados a serem inseridos
+                logging.info(f"Colunas a serem inseridas: {list(df_to_insert_db.columns)}")
+                logging.info(f"Primeiras 5 linhas a serem inseridas:")
+                for i in range(min(5, len(df_to_insert_db))):
+                    logging.info(f"Linha {i+1}: {dict(df_to_insert_db.iloc[i])}")
+                
+                success = db.insert_data(df_to_insert_db, "meteo_data")
+                if success:
+                    logging.info(f"Dados inseridos no banco com sucesso: {len(df_to_insert_db)} registros")
+                else:
+                    logging.error("Falha ao inserir dados no banco")
         except Exception as e:
             logging.error(f"Erro ao inserir dados no banco: {str(e)}")
             import traceback
             logging.error(traceback.format_exc())
     else:
-        logging.warning("Nenhum dado processado")
+        logging.warning("Nenhum dado processado para combinar")
     
-    if db: db.close()
+    if db: 
+        db.close()
+        logging.info("Conexão com o banco de dados fechada")
 
 if __name__ == "__main__":
+    logging.info("Iniciando processo ETL")
     clean_and_transform()
+    logging.info("Processo ETL concluído")
     
     
