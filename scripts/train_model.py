@@ -227,23 +227,28 @@ def train_precipitation_model():
     # Testar técnicas de balanceamento para melhorar ainda mais
     logging.info("Testando técnicas de balanceamento...")
     
-    # SMOTE + Tomek Links
-    smote_tomek = make_imb_pipeline(
-        SMOTE(sampling_strategy={1: 5000, 2: 1000}, random_state=42),
-        TomekLinks(),
-        best_model
-    )
+    try:
+        # CORREÇÃO: Usar 'auto' ou 'minority' para SMOTE
+        smote_tomek = make_imb_pipeline(
+            SMOTE(sampling_strategy='minority', random_state=42),
+            TomekLinks(),
+            best_model
+        )
+        
+        smote_tomek.fit(X, y)
+        y_pred_balanced = smote_tomek.predict(X)
+        
+        f1_balanced = f1_score(y, y_pred_balanced, average='weighted')
+        logging.info(f"F1-Score com SMOTE+Tomek: {f1_balanced:.3f}")
+        
+        # Salvar o melhor modelo balanceado se for melhor
+        if f1_balanced > f1:
+            joblib.dump(smote_tomek, model_dir / "precipitation_model_balanced.pkl")
+            logging.info("Modelo balanceado salvo com sucesso")
     
-    smote_tomek.fit(X, y)
-    y_pred_balanced = smote_tomek.predict(X)
-    
-    f1_balanced = f1_score(y, y_pred_balanced, average='weighted')
-    logging.info(f"F1-Score com SMOTE+Tomek: {f1_balanced:.3f}")
-    
-    # Salvar o melhor modelo balanceado se for melhor
-    if f1_balanced > f1:
-        joblib.dump(smote_tomek, model_dir / "precipitation_model_balanced.pkl")
-        logging.info("Modelo balanceado salvo com sucesso")
+    except Exception as e:
+        logging.error(f"Erro no balanceamento SMOTE+Tomek: {str(e)}")
+        logging.info("Continuando sem balanceamento...")
 
 if __name__ == "__main__":
     train_precipitation_model()
