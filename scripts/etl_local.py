@@ -77,7 +77,7 @@ def clean_and_transform():
                 logging.error(f"Falha ao ler arquivo {file.name} com qualquer combinação de encoding/separador")
                 continue
             
-            # Log inicial do arquivo
+            # Log inicial del archivo
             logging.info(f"Processando {file.name} - {len(df)} linhas iniciais")
             
             # DEBUG: Mostrar primeiras linhas e informações do DataFrame
@@ -217,6 +217,15 @@ def clean_and_transform():
             # VERIFICAÇÃO FINAL: Remover quaisquer linhas com valores nulos nas colunas críticas
             initial_db_count = len(df_to_insert_db)
             df_to_insert_db = df_to_insert_db.dropna(subset=['data', 'hora'])
+            
+            # Preencher nulos em colunas numéricas com a média
+            numeric_cols = ['precipitacao_total', 'pressao_atm_estacao', 'temperatura_ar', 
+                           'umidade_relativa', 'vento_velocidade', 'radiacao_global',
+                           'temperatura_max', 'temperatura_min']
+            for col in numeric_cols:
+                if col in df_to_insert_db.columns:
+                    df_to_insert_db[col] = df_to_insert_db[col].fillna(df_to_insert_db[col].mean())
+            
             final_db_count = len(df_to_insert_db)
             
             if final_db_count < initial_db_count:
@@ -244,3 +253,4 @@ def clean_and_transform():
 
 if __name__ == "__main__":
     clean_and_transform()
+    
