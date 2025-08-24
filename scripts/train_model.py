@@ -228,27 +228,43 @@ def train_precipitation_model():
     logging.info("Testando técnicas de balanceamento...")
     
     try:
-        # CORREÇÃO: Usar 'auto' ou 'minority' para SMOTE
-        smote_tomek = make_imb_pipeline(
-            SMOTE(sampling_strategy='minority', random_state=42),
-            TomekLinks(),
-            best_model
-        )
+        # Amostrar aleatoriamente para reduzir o tamanho do dataset
+        sample_size = min(30000, len(X))
+        if len(X) > 30000:
+            idx = np.random.choice(len(X), sample_size, replace=False)
+            X_sample = X.iloc[idx]
+            y_sample = y.iloc[idx]
+            logging.info(f"Dataset reduzido para {sample_size} amostras para balanceamento")
+        else:
+            X_sample = X
+            y_sample = y
         
-        smote_tomek.fit(X, y)
-        y_pred_balanced = smote_tomek.predict(X)
+        # Usar RandomUnderSampler para reduzir a classe majoritária primeiro
+        rus = RandomUnderSampler(sampling_strategy={0: 50000}, random_state=42)
+        X_res, y_res = rus.fit_resample(X_sample, y_sample)
         
+        # Aplicar SMOTE apenas nas classes minoritárias
+        smote = SMOTE(sampling_strategy={1: 8000, 2: 3000}, random_state=42)
+        X_balanced, y_balanced = smote.fit_resample(X_res, y_res)
+        
+        # Treinar modelo nos dados balanceados
+        balanced_model = best_model.__class__(**best_model.get_params())
+        balanced_model.fit(X_balanced, y_balanced)
+        
+        # Avaliar
+        y_pred_balanced = balanced_model.predict(X)
         f1_balanced = f1_score(y, y_pred_balanced, average='weighted')
-        logging.info(f"F1-Score com SMOTE+Tomek: {f1_balanced:.3f}")
+        logging.info(f"F1-Score com balanceamento: {f1_balanced:.3f}")
         
-        # Salvar o melhor modelo balanceado se for melhor
+        # Salvar se for melhor
         if f1_balanced > f1:
-            joblib.dump(smote_tomek, model_dir / "precipitation_model_balanced.pkl")
+            joblib.dump(balanced_model, model_dir / "precipitation_model_balanced.pkl")
             logging.info("Modelo balanceado salvo com sucesso")
-    
+
     except Exception as e:
-        logging.error(f"Erro no balanceamento SMOTE+Tomek: {str(e)}")
+        logging.error(f"Erro no balanceamento: {str(e)}")
         logging.info("Continuando sem balanceamento...")
 
 if __name__ == "__main__":
     train_precipitation_model()
+    
