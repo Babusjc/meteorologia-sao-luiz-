@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, TimeSeriesSplit
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, TimeSeriesSplit, StratifiedKFold
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, f1_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.compose import ColumnTransformer
-from imblearn.over_sampling import SMOTE, ADASYN
+from sklearn.utils.class_weight import compute_class_weight
+from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 from imblearn.under_sampling import RandomUnderSampler, TomekLinks
 from imblearn.pipeline import make_pipeline as make_imb_pipeline
 from imblearn.ensemble import BalancedRandomForestClassifier
@@ -15,6 +16,7 @@ import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
+from collections import Counter
 warnings.filterwarnings('ignore')
 
 # Configurar logging
@@ -114,8 +116,12 @@ def train_precipitation_model():
         logging.error(f"Dados insuficientes para treinamento: apenas {len(X)} amostras")
         return
     
-    # Dividir dados com validação temporal
-    tscv = TimeSeriesSplit(n_splits=5)
+    # MODIFICAÇÃO: Dividir dados com validação estratificada
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    
+    # Calcular pesos de classe para modelos que suportam class_weight
+    class_weights = compute_class_weight('balanced', classes=np.unique(y), y=y)
+    class_weight_dict = dict(enumerate(class_weights))
     
     # Configurar modelos e pipelines para testar
     models = {
@@ -129,7 +135,7 @@ def train_precipitation_model():
         'RandomForest': RandomForestClassifier(
             n_estimators=100,
             max_depth=15,
-            class_weight='balanced',
+            class_weight=class_weight_dict,  # Usar pesos calculados
             random_state=42,
             n_jobs=-1
         ),
@@ -147,11 +153,11 @@ def train_precipitation_model():
     for name, model in models.items():
         logging.info(f"Testando modelo: {name}")
         
-        # Avaliar com validação cruzada temporal
+        # Avaliar com validação cruzada estratificada
         try:
             cv_scores = cross_val_score(
                 model, X, y, 
-                cv=tscv, 
+                cv=skf, 
                 scoring='f1_weighted',
                 n_jobs=-1
             )
@@ -171,23 +177,38 @@ def train_precipitation_model():
     
     logging.info(f"Melhor modelo: {best_model_name} com F1-Score: {best_score:.3f}")
     
-    # Treinar o melhor modelo em todos os dados
-    best_model.fit(X, y)
-    logging.info("Melhor modelo treinado com sucesso")
+    # MODIFICAÇÃO: Aplicar SMOTE para balanceamento de classes
+    logging.info("Aplicando SMOTE para balanceamento de classes...")
     
-    # Fazer previsões em todo o conjunto para avaliação
-    y_pred = best_model.predict(X)
+    # Dividir dados antes de aplicar SMOTE
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    
+    # Aplicar SMOTE apenas nos dados de treinamento
+    smote = SMOTE(random_state=42)
+    X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+    
+    # Verificar nova distribuição de classes
+    logging.info(f"Distribuição das classes após SMOTE: {Counter(y_train_res)}")
+    
+    # Treinar o melhor modelo nos dados balanceados
+    best_model.fit(X_train_res, y_train_res)
+    logging.info("Melhor modelo treinado com dados balanceados com sucesso")
+    
+    # Fazer previsões no conjunto de teste
+    y_pred = best_model.predict(X_test)
     
     # Avaliar
-    accuracy = accuracy_score(y, y_pred)
-    f1 = f1_score(y, y_pred, average='weighted')
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average='weighted')
     
     logging.info(f"Acurácia: {accuracy:.3f}")
     logging.info(f"F1-Score (weighted): {f1:.3f}")
-    logging.info("\nRelatório de Classificação:\n" + classification_report(y, y_pred))
+    logging.info("\nRelatório de Classificação:\n" + classification_report(y_test, y_pred))
     
     # Matriz de confusão
-    cm = confusion_matrix(y, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
                xticklabels=['Sem Chuva', 'Chuva Leve', 'Chuva Forte'],
@@ -201,6 +222,10 @@ def train_precipitation_model():
     model_dir.mkdir(exist_ok=True)
     plt.savefig(model_dir / "confusion_matrix.png", dpi=300, bbox_inches='tight')
     plt.close()
+    
+    # Treinar modelo final em todos os dados com balanceamento
+    X_res, y_res = smote.fit_resample(X, y)
+    best_model.fit(X_res, y_res)
     
     # Salvar modelo
     joblib.dump(best_model, model_dir / "precipitation_model_improved.pkl")
@@ -224,46 +249,39 @@ def train_precipitation_model():
         plt.savefig(model_dir / "feature_importance_plot.png", dpi=300, bbox_inches='tight')
         plt.close()
     
-    # Testar técnicas de balanceamento para melhorar ainda mais
-    logging.info("Testando técnicas de balanceamento...")
+    # Testar técnicas de balanceamento alternativas
+    logging.info("Testando técnicas de balanceamento alternativas...")
     
     try:
-        # Amostrar aleatoriamente para reduzir o tamanho do dataset
-        sample_size = min(30000, len(X))
-        if len(X) > 30000:
-            idx = np.random.choice(len(X), sample_size, replace=False)
-            X_sample = X.iloc[idx]
-            y_sample = y.iloc[idx]
-            logging.info(f"Dataset reduzido para {sample_size} amostras para balanceamento")
-        else:
-            X_sample = X
-            y_sample = y
+        # Técnicas de oversampling alternativas
+        techniques = {
+            'ADASYN': ADASYN(random_state=42),
+            'BorderlineSMOTE': BorderlineSMOTE(random_state=42)
+        }
         
-        # Usar RandomUnderSampler para reduzir a classe majoritária primeiro
-        rus = RandomUnderSampler(sampling_strategy={0: 50000}, random_state=42)
-        X_res, y_res = rus.fit_resample(X_sample, y_sample)
-        
-        # Aplicar SMOTE apenas nas classes minoritárias
-        smote = SMOTE(sampling_strategy={1: 8000, 2: 3000}, random_state=42)
-        X_balanced, y_balanced = smote.fit_resample(X_res, y_res)
-        
-        # Treinar modelo nos dados balanceados
-        balanced_model = best_model.__class__(**best_model.get_params())
-        balanced_model.fit(X_balanced, y_balanced)
-        
-        # Avaliar
-        y_pred_balanced = balanced_model.predict(X)
-        f1_balanced = f1_score(y, y_pred_balanced, average='weighted')
-        logging.info(f"F1-Score com balanceamento: {f1_balanced:.3f}")
-        
-        # Salvar se for melhor
-        if f1_balanced > f1:
-            joblib.dump(balanced_model, model_dir / "precipitation_model_balanced.pkl")
-            logging.info("Modelo balanceado salvo com sucesso")
+        for tech_name, tech in techniques.items():
+            logging.info(f"Testando {tech_name}...")
+            
+            # Aplicar técnica
+            X_tech, y_tech = tech.fit_resample(X_train, y_train)
+            
+            # Treinar modelo
+            tech_model = best_model.__class__(**best_model.get_params())
+            tech_model.fit(X_tech, y_tech)
+            
+            # Avaliar
+            y_pred_tech = tech_model.predict(X_test)
+            f1_tech = f1_score(y_test, y_pred_tech, average='weighted')
+            logging.info(f"F1-Score com {tech_name}: {f1_tech:.3f}")
+            
+            # Salvar se for melhor que SMOTE
+            if f1_tech > f1:
+                joblib.dump(tech_model, model_dir / f"precipitation_model_{tech_name.lower()}.pkl")
+                logging.info(f"Modelo com {tech_name} salvo com sucesso")
 
     except Exception as e:
-        logging.error(f"Erro no balanceamento: {str(e)}")
-        logging.info("Continuando sem balanceamento...")
+        logging.error(f"Erro no balanceamento alternativo: {str(e)}")
+        logging.info("Continuando sem balanceamento alternativo...")
 
 if __name__ == "__main__":
     train_precipitation_model()
