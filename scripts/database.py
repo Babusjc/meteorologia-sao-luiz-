@@ -1,13 +1,20 @@
+# scripts/database.py
+
 from __future__ import annotations
 import os
 import logging
 from typing import Optional, Iterable, List
+from datetime import date, time
 
 import pandas as pd
 import streamlit as st
 import psycopg2
 import psycopg2.extras as pg_extras
 
+
+# -----------------------------
+# Uso no Streamlit (dashboard)
+# -----------------------------
 
 def get_data_from_db(query: str) -> pd.DataFrame:
     """
@@ -28,6 +35,11 @@ def get_data_from_db(query: str) -> pd.DataFrame:
         logging.error(f"Falha ao conectar ou executar a consulta: {e}")
         st.error(f"Erro ao acessar o banco de dados: {e}")
         return pd.DataFrame()
+
+
+# ----------------------------------------
+# Uso em scripts (ETL/CI) fora do Streamlit
+# ----------------------------------------
 
 class ETLDB:
     """
@@ -76,7 +88,7 @@ class ETLDB:
         """
         if df is None or df.empty:
             logging.warning("DataFrame vazio — nada a inserir.")
-            return True
+            return False
 
         expected_cols: List[str] = [
             "data", "hora",
@@ -85,32 +97,55 @@ class ETLDB:
             "radiacao_global", "temperatura_max", "temperatura_min",
         ]
 
-        df_to_insert = (
-            df.reindex(columns=expected_cols)
-              .copy()
-        )
-
+        # Reindexa para garantir a ordem das colunas
+        df_to_insert = df.reindex(columns=expected_cols).copy()
+        
+        # DEBUG: Verificar tipos de dados antes da conversão
+        logging.info(f"Tipos de dados antes da conversão: {df_to_insert.dtypes}")
+        
+        # Converter tipos de data/hora se necessário
         if "data" in df_to_insert.columns:
-            df_to_insert["data"] = pd.to_datetime(df_to_insert["data"], errors="coerce").dt.date
+            # Se já é datetime.date, manter; caso contrário, converter
+            if not all(isinstance(x, date) for x in df_to_insert["data"].dropna()):
+                df_to_insert["data"] = pd.to_datetime(df_to_insert["data"], errors="coerce").dt.date
+                logging.info("Coluna 'data' convertida para datetime.date")
+        
         if "hora" in df_to_insert.columns:
-            df_to_insert["hora"] = pd.to_datetime(df_to_insert["hora"], errors="coerce").dt.time
+            # Se já é datetime.time, manter; caso contrário, converter
+            if not all(isinstance(x, time) for x in df_to_insert["hora"].dropna()):
+                # Tentar diferentes formatos de hora
+                try:
+                    df_to_insert["hora"] = pd.to_datetime(df_to_insert["hora"], format='%H:%M', errors="coerce").dt.time
+                except:
+                    try:
+                        df_to_insert["hora"] = pd.to_datetime(df_to_insert["hora"], errors="coerce").dt.time
+                    except:
+                        logging.error("Falha ao converter coluna 'hora' para datetime.time")
+                logging.info("Coluna 'hora' convertida para datetime.time")
 
+        # Substituir todos os valores NaT/NaN por None
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
+        
+        # DEBUG: Verificar valores após conversão
+        logging.info(f"Valores nulos após conversão - data: {df_to_insert['data'].isnull().sum()}, hora: {df_to_insert['hora'].isnull().sum()}")
 
+        # Remover apenas linhas onde data OU hora são nulos
         initial_count = len(df_to_insert)
-        df_to_insert = df_to_insert.dropna(subset=["data", "hora"])
+        df_to_insert = df_to_insert.dropna(subset=['data', 'hora'])
         final_count = len(df_to_insert)
         
         if final_count < initial_count:
             logging.warning(f"Removidas {initial_count - final_count} linhas com data/hora inválidos para inserção no banco")
 
+        # Se não houver dados após a limpeza, retornar False
         if df_to_insert.empty:
             logging.warning("Nenhum dado válido para inserção após limpeza de data/hora nulos.")
             return False
 
+        # Preparar dados para inserção
         cols_sql = ", ".join(expected_cols)
         placeholders = ", ".join(["%s"] * len(expected_cols))
-        update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])
+        update_assignments = ", ".join([f"{c} = EXCLUDED.{c}" for c in expected_cols[2:]])  # pula PK
 
         template = f"({placeholders})"
         
@@ -121,9 +156,27 @@ class ETLDB:
             DO UPDATE SET {update_assignments};
         """
 
-        values = [tuple(row[c] for c in expected_cols) for _, row in df_to_insert.iterrows()]
+        # Converter DataFrame para lista de tuplas
+        values = []
+        for _, row in df_to_insert.iterrows():
+            # Garantir que os tipos são compatíveis com PostgreSQL
+            row_values = []
+            for col in expected_cols:
+                value = row[col]
+                
+                # Converter tipos Python para tipos PostgreSQL compatíveis
+                if isinstance(value, date):
+                    value = value.isoformat()
+                elif isinstance(value, time):
+                    value = value.isoformat()
+                elif pd.isna(value):
+                    value = None
+                    
+                row_values.append(value)
+            values.append(tuple(row_values))
 
         try:
+            # Inserir dados em lote
             pg_extras.execute_values(
                 self.cursor, 
                 upsert_sql, 
@@ -137,6 +190,9 @@ class ETLDB:
         except Exception as e:
             self.conn.rollback()
             logging.error(f"Erro ao inserir dados (upsert) em {table}: {e}")
+            # Log adicional para debug
+            if values:
+                logging.info(f"Primeira linha de valores: {values[0]}")
             return False
 
     def execute_query(self, query: str, params: Optional[Iterable] = None) -> None:
