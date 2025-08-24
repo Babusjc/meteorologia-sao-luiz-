@@ -113,7 +113,12 @@ class ETLDB:
         df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
 
         # CORREÇÃO CRÍTICA: Remover linhas com data ou hora nulos
+        initial_count = len(df_to_insert)
         df_to_insert = df_to_insert.dropna(subset=['data', 'hora'])
+        final_count = len(df_to_insert)
+        
+        if final_count < initial_count:
+            logging.warning(f"Removidas {initial_count - final_count} linhas com valores nulos para inserção no banco")
 
         # Se não houver dados após a limpeza, retornar
         if df_to_insert.empty:
